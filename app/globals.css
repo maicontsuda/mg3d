@@ -16,3 +16,6 @@
 
 /* Announcement contrast: white copy, blue icon, red separator */
 .announcement{color:#ffffff!important;background:#050912!important}.announcement svg{color:#087cff!important}.announcement span{color:#e92c38!important}
+
+/* Final contrast sweep: no dark copy on dark surfaces */
+.button,.button-dark{background:#087cff!important;color:#fff!important}.button:hover,.button-dark:hover{background:#e92c38!important;color:#fff!important}.button svg,.button-dark svg{color:#fff!important}.site-header button,.site-header button svg,.drawer-head button,.modal-close,.admin-modal button svg,.cart-drawer button svg{color:#f4f8ff}.newsletter form button,.newsletter form button svg{color:#58a8ff!important}.qty button{color:#f4f8ff!important;background:#101a2b}.admin-grid button{color:#f4f8ff}.admin-grid button>span,.admin-grid button svg{color:#58a8ff}.admin-session button{color:#58a8ff!important}.quick-add,.quick-add svg{color:#fff!important}.filters button{color:#c0cee2!important}.filters button.active,.filters button:hover{color:#fff!important}.text-link,.text-link svg{color:#f4f8ff!important}.empty-cart .button{color:#fff!important}
