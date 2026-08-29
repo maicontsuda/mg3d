@@ -13,3 +13,6 @@
 
 /* High contrast pass: readable text across every dark surface */
 :root{--muted:#c0cee2;--line:rgba(183,211,245,.3)}body{color:#f4f8ff}.hero-text,.section-heading>p,.product-info p,.newsletter>div:last-child>p{color:#c0cee2}.eyebrow,.product-count,.product-meta,.filters button,.float-tag{color:#c0cee2}.filters button.active,.filters button:hover{color:#fff}.footer-brand p,.footer-links a{color:#b8c8df}.footer-bottom{color:#a8bad3}.search input::placeholder{color:#b8c8df}.search input{color:#f4f8ff}.product-info h3,.section-heading h2,.manifesto h2,.newsletter h2,.hero h1{color:#f4f8ff}.manifesto-copy>p:not(.eyebrow){color:#c0cee2}.values span{color:#b8c8df}.values strong{color:#fff}.site-header nav a,.account-button,.bag-button{color:#f4f8ff}.site-header nav a:hover,.account-button:hover{color:#58a8ff}.product-badge{color:#f4f8ff}.modal-copy,.modal-foot,.cart-summary p,.admin-welcome p{color:#c0cee2}.cart-item p{color:#f4f8ff}.newsletter small{color:#b8c8df}.text-link{color:#f4f8ff}.hero-note{color:#c0cee2}.hero-note strong{color:#fff}.tag-bottom{color:#dce9ff}.admin-session{color:#c0cee2}.admin-grid small{color:#c0cee2}
+
+/* Announcement contrast: white copy, blue icon, red separator */
+.announcement{color:#ffffff!important;background:#050912!important}.announcement svg{color:#087cff!important}.announcement span{color:#e92c38!important}
