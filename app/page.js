@@ -3,15 +3,17 @@
 import { useMemo, useState } from 'react'
 
 const products = [
-  { id: 1, name: 'Vaso Orbital', category: 'Casa', price: 149, color: 'Tangerina', badge: 'Mais vendido', image: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?auto=format&fit=crop&w=900&q=85', desc: 'Geometria orgânica para plantas que pedem destaque.' },
-  { id: 2, name: 'Luminária Halo', category: 'Luz', price: 289, color: 'Areia', badge: 'Novo', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=900&q=85', desc: 'Luz suave, sombra escultural e presença na medida.' },
-  { id: 3, name: 'Suporte Arc', category: 'Organização', price: 89, color: 'Preto', badge: '', image: 'https://images.unsplash.com/photo-1616627561950-9f746e330187?auto=format&fit=crop&w=900&q=85', desc: 'Seu fone sempre no lugar. Design limpo, mesa leve.' },
-  { id: 4, name: 'Bandeja Duna', category: 'Casa', price: 119, color: 'Terracota', badge: '', image: 'https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=900&q=85', desc: 'Uma peça tátil para chaves, joias e pequenos rituais.' },
-  { id: 5, name: 'Vaso Nexo', category: 'Casa', price: 179, color: 'Oliva', badge: 'Edição limitada', image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=900&q=85', desc: 'Volume e textura que transformam qualquer canto.' },
-  { id: 6, name: 'Organizador Grid', category: 'Organização', price: 99, color: 'Cinza', badge: '', image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85', desc: 'Pequenas formas, grandes possibilidades de organização.' },
+  { id: 1, name: 'Vaso Orbital', category: 'Casa', price: 1490, color: 'Tangerina', badge: 'Mais vendido', image: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?auto=format&fit=crop&w=900&q=85', desc: 'Geometria orgânica para plantas que pedem destaque.' },
+  { id: 2, name: 'Luminária Halo', category: 'Luz', price: 2980, color: 'Areia', badge: 'Novo', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=900&q=85', desc: 'Luz suave, sombra escultural e presença na medida.' },
+  { id: 3, name: 'Suporte Arc', category: 'Organização', price: 890, color: 'Preto', badge: '', image: 'https://images.unsplash.com/photo-1616627561950-9f746e330187?auto=format&fit=crop&w=900&q=85', desc: 'Seu fone sempre no lugar. Design limpo, mesa leve.' },
+  { id: 4, name: 'Bandeja Duna', category: 'Casa', price: 1190, color: 'Terracota', badge: '', image: 'https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=900&q=85', desc: 'Uma peça tátil para chaves, joias e pequenos rituais.' },
+  { id: 5, name: 'Vaso Nexo', category: 'Casa', price: 1790, color: 'Oliva', badge: 'Edição limitada', image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=900&q=85', desc: 'Volume e textura que transformam qualquer canto.' },
+  { id: 6, name: 'Organizador Grid', category: 'Organização', price: 990, color: 'Cinza', badge: '', image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85', desc: 'Pequenas formas, grandes possibilidades de organização.' },
 ]
 
 const categories = ['Todos', 'Casa', 'Luz', 'Organização']
+const ADMIN_EMAIL = 'maicontsuda@gmail.com'
+const formatJPY = value => `¥${value.toLocaleString('ja-JP')}`
 
 function Icon({ name, size = 20 }) {
   const paths = {
@@ -33,10 +35,28 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false)
   const [newsletter, setNewsletter] = useState('')
   const [subscribed, setSubscribed] = useState(false)
+  const [user, setUser] = useState(null)
+  const [loginOpen, setLoginOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [customers, setCustomers] = useState([])
 
   const filtered = useMemo(() => products.filter(p => (category === 'Todos' || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase())), [category, query])
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0)
+
+  function handleLogin(event) {
+    event.preventDefault()
+    const email = loginEmail.trim().toLowerCase()
+    if (!email || !email.includes('@')) { setLoginError('Digite um e-mail válido.'); return }
+    const nextUser = { email, isAdmin: email === ADMIN_EMAIL }
+    setUser(nextUser)
+    setCustomers(current => current.some(item => item.email === email) ? current : [...current, { email, joined: new Date().toLocaleDateString('pt-BR') }])
+    setLoginOpen(false)
+    setLoginError('')
+    setLoginEmail('')
+  }
 
   function addToCart(product) {
     setCart(current => {
@@ -51,11 +71,11 @@ export default function Home() {
   }
 
   return <main>
-    <div className="announcement"><Icon name="spark" size={15} /> Frete grátis acima de R$ 250 <span>·</span> Produção sob demanda, sem desperdício</div>
+    <div className="announcement"><Icon name="spark" size={15} /> Frete grátis acima de ¥5.000 <span>·</span> Produção sob demanda, sem desperdício</div>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="MG3D início"><span className="brand-mark">M</span><span>MG<span>3D</span></span></a>
       <nav><a href="#colecao">Coleção</a><a href="#processo">Como fazemos</a><a href="#sobre">Sobre a MG3D</a></nav>
-      <div className="header-actions"><label className="search"><Icon name="search" size={18} /><input aria-label="Buscar produtos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="bag-button" onClick={() => setCartOpen(true)} aria-label="Abrir carrinho"><Icon name="bag" size={21} />{cartCount > 0 && <b>{cartCount}</b>}</button></div>
+      <div className="header-actions"><label className="search"><Icon name="search" size={18} /><input aria-label="Buscar produtos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="account-button" onClick={() => user ? (user.isAdmin ? setAdminOpen(true) : null) : setLoginOpen(true)}>{user ? (user.isAdmin ? 'Painel admin' : 'Minha conta') : 'Entrar'}</button><button className="bag-button" onClick={() => setCartOpen(true)} aria-label="Abrir carrinho"><Icon name="bag" size={21} />{cartCount > 0 && <b>{cartCount}</b>}</button></div>
     </header>
 
     <section className="hero" id="top">
@@ -65,7 +85,7 @@ export default function Home() {
 
     <section className="ticker"><span>IMPRESSO COM INTENÇÃO</span><span>✳</span><span>MENOS DESPERDÍCIO</span><span>✳</span><span>FEITO NO BRASIL</span><span>✳</span><span>IMPRESSO COM INTENÇÃO</span></section>
 
-    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image"><img src={product.image} alt={product.name} /><span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3>{product.name}</h3><p>{product.desc}</p></div><strong>R$ {product.price.toFixed(2).replace('.', ',')}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
+    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image"><img src={product.image} alt={product.name} /><span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3>{product.name}</h3><p>{product.desc}</p></div><strong>{formatJPY(product.price)}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
 
     <section className="manifesto section" id="processo"><div className="manifesto-image"><img src="https://images.unsplash.com/photo-1631541909061-71e349d1f9f3?auto=format&fit=crop&w=1200&q=85" alt="Processo de criação de peças" /><span>do arquivo<br /><i>ao objeto.</i></span></div><div className="manifesto-copy"><p className="eyebrow"><span></span> Nosso jeito de fazer</p><h2>Design consciente,<br /><i>sem linha de montagem.</i></h2><p>A gente acredita que uma boa peça nasce de uma boa pergunta: ela precisa existir? Cada produto MG3D é desenhado, impresso e finalizado por aqui, um de cada vez.</p><div className="values"><div><b>01</b><span><strong>Sob demanda</strong>Produzimos apenas o que vai encontrar uma casa.</span></div><div><b>02</b><span><strong>Material honesto</strong>PLA de origem vegetal, escolhido para durar.</span></div><div><b>03</b><span><strong>Feito por pessoas</strong>Do primeiro rascunho ao seu pacote.</span></div></div><a className="text-link" href="#sobre">Conheça nossa história <Icon name="arrow" size={16} /></a></div></section>
 
@@ -73,6 +93,10 @@ export default function Home() {
 
     <footer><div className="footer-brand"><a className="brand" href="#top"><span className="brand-mark">M</span><span>MG<span>3D</span></span></a><p>Objetos que ganham forma.<br />E um lugar na sua casa.</p></div><div className="footer-links"><div><b>Explorar</b><a href="#colecao">Coleção</a><a href="#processo">Nosso processo</a><a href="#sobre">Sobre nós</a></div><div><b>Ajuda</b><a href="#top">Envios e trocas</a><a href="#top">Cuidados com as peças</a><a href="#top">Fale com a gente</a></div></div><div className="footer-bottom"><span>© 2026 MG3D. Feito com intenção.</span><span>Instagram &nbsp;·&nbsp; Pinterest</span></div></footer>
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>R$ {item.price.toFixed(2).replace('.', ',')}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>R$ {cartTotal.toFixed(2).replace('.', ',')}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full">Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
+    {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p><form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
+
+    {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button><span>⌘</span><strong>Gerenciar produtos</strong><small>Adicionar, editar e organizar seu catálogo</small><Icon name="arrow" size={16} /></button><button><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button></div><div className="admin-session"><span>{user.email}</span><button onClick={() => { setUser(null); setAdminOpen(false) }}>Sair da conta</button></div></section></div>}
+
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full">Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
   </main>
 }
