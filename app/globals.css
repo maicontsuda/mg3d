@@ -7,3 +7,6 @@
 
 /* Header contrast and logo colors */
 .site-header nav a{color:#eaf2ff}.site-header nav a:hover{color:#087cff}.brand>span:last-child{color:#eaf2ff;display:flex;align-items:baseline;gap:0}.brand>span:last-child em{font-style:normal;color:#087cff}.brand>span:last-child strong{font-weight:700;color:#e92c38}.brand>span:last-child i{font-style:normal;color:#eaf2ff}.brand>span:last-child small{display:block;margin-left:3px}.account-button{color:#eaf2ff}.account-button:hover{color:#087cff}.search{color:#eaf2ff}.search input::placeholder{color:#8fa3bf}.bag-button{color:#eaf2ff}
+
+/* Brand lockup: M and G side by side */
+.brand>span:last-child{flex-direction:row!important;flex-wrap:wrap;align-items:baseline;column-gap:0;line-height:.8}.brand>span:last-child em,.brand>span:last-child strong,.brand>span:last-child i{display:inline-block}.brand>span:last-child small{flex-basis:100%;margin-left:0!important;margin-top:7px!important}.hero-slogan{font:500 10px var(--mono);text-transform:uppercase;letter-spacing:.2em;color:#e92c38;margin:0 0 22px}.hero-slogan:before{content:'// ';color:#087cff}@media(max-width:800px){.hero-slogan{font-size:9px;letter-spacing:.14em}}
