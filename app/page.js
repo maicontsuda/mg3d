@@ -1,19 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { products, categories, formatJPY } from './catalog'
 
-const products = [
-  { id: 1, name: 'Vaso Orbital', category: 'Casa', price: 1490, color: 'Tangerina', badge: 'Mais vendido', image: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?auto=format&fit=crop&w=900&q=85', desc: 'Geometria orgânica para plantas que pedem destaque.' },
-  { id: 2, name: 'Luminária Halo', category: 'Luz', price: 2980, color: 'Areia', badge: 'Novo', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=900&q=85', desc: 'Luz suave, sombra escultural e presença na medida.' },
-  { id: 3, name: 'Suporte Arc', category: 'Organização', price: 890, color: 'Preto', badge: '', image: 'https://images.unsplash.com/photo-1616627561950-9f746e330187?auto=format&fit=crop&w=900&q=85', desc: 'Seu fone sempre no lugar. Design limpo, mesa leve.' },
-  { id: 4, name: 'Bandeja Duna', category: 'Casa', price: 1190, color: 'Terracota', badge: '', image: 'https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=900&q=85', desc: 'Uma peça tátil para chaves, joias e pequenos rituais.' },
-  { id: 5, name: 'Vaso Nexo', category: 'Casa', price: 1790, color: 'Oliva', badge: 'Edição limitada', image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=900&q=85', desc: 'Volume e textura que transformam qualquer canto.' },
-  { id: 6, name: 'Organizador Grid', category: 'Organização', price: 990, color: 'Cinza', badge: '', image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85', desc: 'Pequenas formas, grandes possibilidades de organização.' },
-]
-
-const categories = ['Todos', 'Casa', 'Luz', 'Organização']
 const ADMIN_EMAIL = 'maicontsuda@gmail.com'
-const formatJPY = value => `¥${value.toLocaleString('ja-JP')}`
 
 function Icon({ name, size = 20 }) {
   const paths = {
@@ -85,7 +76,7 @@ export default function Home() {
 
     <section className="ticker"><span>IMPRESSO COM INTENÇÃO</span><span>✳</span><span>MENOS DESPERDÍCIO</span><span>✳</span><span>FEITO NO JAPÃO</span><span>✳</span><span>IMPRESSO COM INTENÇÃO</span></section>
 
-    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image"><img src={product.image} alt={product.name} /><span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3>{product.name}</h3><p>{product.desc}</p></div><strong>{formatJPY(product.price)}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
+    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image"><img src={product.image} alt={product.name} /><span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3><Link href={`/produtos/${product.slug}`}>{product.name}</Link></h3><p>{product.desc}</p></div><strong>{formatJPY(product.price)}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
 
     <section className="manifesto section" id="processo"><div className="manifesto-image"><div className="process-visual-art"><img className="process-logo" src="/logo-mg.webp" alt="Logo MG 3D Print" /></div><span className="process-caption">DO ARQUIVO<br /><i>AO OBJETO.</i></span></div><div className="manifesto-copy"><p className="eyebrow"><span></span> Nosso jeito de fazer</p><h2>Design consciente,<br /><i>sem linha de montagem.</i></h2><p>A gente acredita que uma boa peça nasce de uma boa pergunta: ela precisa existir? Cada produto MG3D é desenhado, impresso e finalizado por aqui, um de cada vez.</p><div className="values"><div><b>01</b><span><strong>Sob demanda</strong>produzimos o que você mais precisa.</span></div><div><b>02</b><span><strong>Material</strong>PLA, PETG e TPU o material para cada produto.</span></div><div><b>03</b><span><strong>Feito por pessoas</strong>Do primeiro rascunho ao seu pacote.</span></div></div><a className="text-link" href="#sobre">Conheça nossa história <Icon name="arrow" size={16} /></a></div></section>
 

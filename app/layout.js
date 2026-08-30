@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'MG3D — Objetos que ganham forma',
-  description: 'Design autoral impresso em 3D para casas com personalidade.',
+  title: 'MG3D — Inovação em cada camada',
+  description: 'Produtos impressos em 3D, feitos sob demanda no Japão.',
 }
 
 export default function RootLayout({ children }) {
