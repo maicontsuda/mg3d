@@ -70,3 +70,7 @@ create policy users_read_order_items on public.order_items for select using (exi
 
 create index if not exists products_active_idx on public.products(active);
 create index if not exists orders_customer_idx on public.orders(customer_id);
+
+
+drop policy if exists users_create_order_items on public.order_items;
+create policy users_create_order_items on public.order_items for insert with check (exists (select 1 from public.orders o where o.id = order_id and o.customer_id = auth.uid()));
