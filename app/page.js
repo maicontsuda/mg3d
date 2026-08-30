@@ -1,10 +1,23 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { products, categories, formatJPY } from './catalog'
 
 const ADMIN_EMAIL = 'maicontsuda@gmail.com'
+const emptyProduct = { name: '', category: 'Casa', price: 0, color: '', material: 'PLA', dimensions: '', production: '3 a 5 dias úteis', colors: '', image: '', desc: '', details: '', badge: '', active: true }
+const slugify = value => value.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+
+function ProductForm({ product, onSave, onCancel }) {
+  const [form, setForm] = useState(product || emptyProduct)
+  const update = (key, value) => setForm(current => ({ ...current, [key]: value }))
+  function submit(event) {
+    event.preventDefault()
+    if (!form.name.trim() || !form.price || !form.image.trim()) return
+    onSave({ ...form, id: form.id || Date.now(), slug: form.slug || slugify(form.name), price: Number(form.price), active: form.active !== false })
+  }
+  return <form className="admin-product-form" onSubmit={submit}><div className="admin-form-head"><div><p className="eyebrow"><span></span> Catálogo</p><h3>{product ? 'Editar produto' : 'Novo produto'}</h3></div><button type="button" className="modal-close" onClick={onCancel} aria-label="Fechar formulário"><Icon name="x" /></button></div><div className="admin-form-grid"><label>Nome<input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="Ex.: Vaso Orbit" /></label><label>Preço em ienes<input required min="1" type="number" value={form.price || ''} onChange={e => update('price', e.target.value)} placeholder="1490" /></label><label>Categoria<select value={form.category} onChange={e => update('category', e.target.value)}><option>Casa</option><option>Luz</option><option>Organização</option></select></label><label>Material<select value={form.material} onChange={e => update('material', e.target.value)}><option>PLA</option><option>PETG</option><option>TPU</option></select></label><label>Cor principal<input value={form.color} onChange={e => update('color', e.target.value)} placeholder="Azul" /></label><label>Cores disponíveis<input value={form.colors} onChange={e => update('colors', e.target.value)} placeholder="Azul, branco e preto" /></label><label>Dimensões<input value={form.dimensions} onChange={e => update('dimensions', e.target.value)} placeholder="20 × 15 × 10 cm" /></label><label>Prazo de produção<input value={form.production} onChange={e => update('production', e.target.value)} placeholder="3 a 5 dias úteis" /></label><label className="admin-form-wide">URL da imagem<input required value={form.image} onChange={e => update('image', e.target.value)} placeholder="https://..." /></label><label className="admin-form-wide">Resumo curto<input value={form.desc} onChange={e => update('desc', e.target.value)} placeholder="Uma descrição para a coleção" /></label><label className="admin-form-wide">Descrição completa<textarea rows="3" value={form.details} onChange={e => update('details', e.target.value)} placeholder="Conte a história e os detalhes do produto" /></label></div><div className="admin-form-actions"><button type="button" className="detail-contact" onClick={onCancel}>Cancelar</button><button className="button button-dark" type="submit">Salvar produto <Icon name="check" size={17} /></button></div></form>
+}
 
 function Icon({ name, size = 20 }) {
   const paths = {
@@ -32,8 +45,38 @@ export default function Home() {
   const [loginEmail, setLoginEmail] = useState('')
   const [loginError, setLoginError] = useState('')
   const [customers, setCustomers] = useState([])
+  const [adminProducts, setAdminProducts] = useState(products)
+  const [editingProduct, setEditingProduct] = useState(null)
+  const [productFormOpen, setProductFormOpen] = useState(false)
 
-  const filtered = useMemo(() => products.filter(p => (category === 'Todos' || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase())), [category, query])
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('mg3d-products')
+      if (saved) setAdminProducts(JSON.parse(saved))
+    } catch { /* usa o catálogo inicial se o armazenamento estiver indisponível */ }
+  }, [])
+
+  function persistProducts(next) {
+    setAdminProducts(next)
+    try { window.localStorage.setItem('mg3d-products', JSON.stringify(next)) } catch { /* mantém a sessão funcionando */ }
+  }
+
+  function saveProduct(product) {
+    const next = adminProducts.some(item => item.id === product.id) ? adminProducts.map(item => item.id === product.id ? product : item) : [...adminProducts, product]
+    persistProducts(next)
+    setProductFormOpen(false)
+    setEditingProduct(null)
+  }
+
+  function removeProduct(id) {
+    if (window.confirm('Remover este produto do catálogo?')) persistProducts(adminProducts.filter(item => item.id !== id))
+  }
+
+  function toggleProduct(id) {
+    persistProducts(adminProducts.map(item => item.id === id ? { ...item, active: item.active === false } : item))
+  }
+
+  const filtered = useMemo(() => adminProducts.filter(p => p.active !== false && (category === 'Todos' || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase())), [adminProducts, category, query])
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0)
 
@@ -86,7 +129,7 @@ export default function Home() {
 
     {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p><form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
 
-    {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button><span>⌘</span><strong>Gerenciar produtos</strong><small>Adicionar, editar e organizar seu catálogo</small><Icon name="arrow" size={16} /></button><button><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button></div><div className="admin-session"><span>{user.email}</span><button onClick={() => { setUser(null); setAdminOpen(false) }}>Sair da conta</button></div></section></div>}
+    {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button></div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><div className="admin-session"><span>{user.email}</span><button onClick={() => { setUser(null); setAdminOpen(false) }}>Sair da conta</button></div></>}</section></div>}
 
     {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full">Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
   </main>
