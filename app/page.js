@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { products, categories, formatJPY } from './catalog'
+import { supabase } from './lib/supabase'
 
 const ADMIN_EMAIL = 'maicontsuda@gmail.com'
 const emptyProduct = { name: '', category: 'Casa', price: 0, color: '', material: 'PLA', dimensions: '', production: '3 a 5 dias úteis', colors: '', image: '', desc: '', details: '', badge: '', active: true }
@@ -44,52 +45,67 @@ export default function Home() {
   const [adminOpen, setAdminOpen] = useState(false)
   const [loginEmail, setLoginEmail] = useState('')
   const [loginError, setLoginError] = useState('')
+  const [loginMessage, setLoginMessage] = useState('')
   const [customers, setCustomers] = useState([])
   const [adminProducts, setAdminProducts] = useState(products)
   const [editingProduct, setEditingProduct] = useState(null)
   const [productFormOpen, setProductFormOpen] = useState(false)
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem('mg3d-products')
-      if (saved) setAdminProducts(JSON.parse(saved))
-    } catch { /* usa o catálogo inicial se o armazenamento estiver indisponível */ }
+    let mounted = true
+    async function load() {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const current = sessionData.session?.user
+      if (mounted && current) setUser({ email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL })
+      const { data } = await supabase.from('products').select('*').order('id')
+      if (mounted && data?.length) setAdminProducts(data.map(fromDbProduct))
+    }
+    load()
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const current = session?.user
+      setUser(current ? { email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL } : null)
+    })
+    return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
 
-  function persistProducts(next) {
-    setAdminProducts(next)
-    try { window.localStorage.setItem('mg3d-products', JSON.stringify(next)) } catch { /* mantém a sessão funcionando */ }
+  function fromDbProduct(item) { return { ...item, desc: item.description || '', active: item.active !== false } }
+  function toDbProduct(product) { return { id: product.id, slug: product.slug || slugify(product.name), name: product.name, category: product.category, price: Number(product.price), color: product.color || '', badge: product.badge || '', image: product.image, description: product.desc || '', details: product.details || '', material: product.material || 'PLA', dimensions: product.dimensions || '', production: product.production || '', colors: product.colors || '', active: product.active !== false } }
+
+  async function saveProduct(product) {
+    const payload = toDbProduct(product)
+    const { data, error } = await supabase.from('products').upsert(payload).select().single()
+    if (error) { setLoginError(`Não foi possível salvar: ${error.message}`); return }
+    const saved = fromDbProduct(data)
+    setAdminProducts(current => current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
+    setProductFormOpen(false); setEditingProduct(null); setLoginError('')
   }
 
-  function saveProduct(product) {
-    const next = adminProducts.some(item => item.id === product.id) ? adminProducts.map(item => item.id === product.id ? product : item) : [...adminProducts, product]
-    persistProducts(next)
-    setProductFormOpen(false)
-    setEditingProduct(null)
+  async function removeProduct(id) {
+    if (!window.confirm('Remover este produto do catálogo?')) return
+    const { error } = await supabase.from('products').delete().eq('id', id)
+    if (error) { setLoginError(`Não foi possível excluir: ${error.message}`); return }
+    setAdminProducts(current => current.filter(item => item.id !== id))
   }
 
-  function removeProduct(id) {
-    if (window.confirm('Remover este produto do catálogo?')) persistProducts(adminProducts.filter(item => item.id !== id))
-  }
-
-  function toggleProduct(id) {
-    persistProducts(adminProducts.map(item => item.id === id ? { ...item, active: item.active === false } : item))
+  async function toggleProduct(id) {
+    const product = adminProducts.find(item => item.id === id)
+    if (!product) return
+    const { error } = await supabase.from('products').update({ active: product.active === false }).eq('id', id)
+    if (error) { setLoginError(`Não foi possível alterar o status: ${error.message}`); return }
+    setAdminProducts(current => current.map(item => item.id === id ? { ...item, active: item.active === false } : item))
   }
 
   const filtered = useMemo(() => adminProducts.filter(p => p.active !== false && (category === 'Todos' || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase())), [adminProducts, category, query])
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0)
 
-  function handleLogin(event) {
+  async function handleLogin(event) {
     event.preventDefault()
     const email = loginEmail.trim().toLowerCase()
     if (!email || !email.includes('@')) { setLoginError('Digite um e-mail válido.'); return }
-    const nextUser = { email, isAdmin: email === ADMIN_EMAIL }
-    setUser(nextUser)
-    setCustomers(current => current.some(item => item.email === email) ? current : [...current, { email, joined: new Date().toLocaleDateString('pt-BR') }])
-    setLoginOpen(false)
-    setLoginError('')
-    setLoginEmail('')
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
+    if (error) { setLoginError(error.message); return }
+    setLoginError(''); setLoginMessage('Enviamos um link de acesso para o seu e-mail. Abra-o para concluir o login.'); setLoginEmail('')
   }
 
   function addToCart(product) {
@@ -127,7 +143,7 @@ export default function Home() {
 
     <footer><div className="footer-brand"><a className="brand" href="#top"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a><p>Objetos que ganham forma.<br />E um lugar na sua casa.</p></div><div className="footer-links"><div><b>Explorar</b><a href="#colecao">Coleção</a><a href="#processo">Nosso processo</a><a href="#sobre">Sobre nós</a></div><div><b>Ajuda</b><a href="#top">Envios e trocas</a><a href="#top">Cuidados com as peças</a><a href="#top">Fale com a gente</a></div></div><div className="footer-bottom"><span>© 2026 MG3D. Feito com intenção.</span><span>Instagram &nbsp;·&nbsp; Pinterest</span></div></footer>
 
-    {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p><form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
+    {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p>{loginMessage && <p className="login-success">{loginMessage}</p>}<form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
 
     {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button></div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><div className="admin-session"><span>{user.email}</span><button onClick={() => { setUser(null); setAdminOpen(false) }}>Sair da conta</button></div></>}</section></div>}
 
