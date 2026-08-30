@@ -46,27 +46,52 @@ export default function Home() {
   const [loginEmail, setLoginEmail] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [orders, setOrders] = useState([])
   const [customers, setCustomers] = useState([])
   const [adminProducts, setAdminProducts] = useState(products)
   const [editingProduct, setEditingProduct] = useState(null)
   const [productFormOpen, setProductFormOpen] = useState(false)
+  const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
 
   useEffect(() => {
     let mounted = true
     async function load() {
       const { data: sessionData } = await supabase.auth.getSession()
       const current = sessionData.session?.user
-      if (mounted && current) setUser({ email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL })
+      if (mounted && current) {
+        setUser({ id: current.id, email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL })
+        await syncCustomer(current)
+        const { data: orderData } = await supabase.from('orders').select('*, order_items(*)').eq('customer_id', current.id).order('created_at', { ascending: false })
+        if (mounted && orderData) setOrders(orderData)
+        if (current.email?.toLowerCase() === ADMIN_EMAIL) {
+          const { data: customerData } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
+          if (mounted && customerData) setCustomers(customerData)
+        }
+      }
       const { data } = await supabase.from('products').select('*').order('id')
       if (mounted && data?.length) setAdminProducts(data.map(fromDbProduct))
     }
     load()
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const current = session?.user
-      setUser(current ? { email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL } : null)
+      setUser(current ? { id: current.id, email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL } : null)
+      if (current) {
+        await syncCustomer(current)
+        const { data } = await supabase.from('orders').select('*, order_items(*)').eq('customer_id', current.id).order('created_at', { ascending: false })
+        if (data) setOrders(data)
+        if (current.email?.toLowerCase() === ADMIN_EMAIL) {
+          const { data: customerData } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
+          if (customerData) setCustomers(customerData)
+        }
+      }
     })
     return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
+
+  async function syncCustomer(current) {
+    await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
+  }
 
   function fromDbProduct(item) { return { ...item, desc: item.description || '', active: item.active !== false } }
   function toDbProduct(product) { return { id: product.id, slug: product.slug || slugify(product.name), name: product.name, category: product.category, price: Number(product.price), color: product.color || '', badge: product.badge || '', image: product.image, description: product.desc || '', details: product.details || '', material: product.material || 'PLA', dimensions: product.dimensions || '', production: product.production || '', colors: product.colors || '', active: product.active !== false } }
@@ -120,12 +145,30 @@ export default function Home() {
     setCart(current => current.map(item => item.id === id ? { ...item, qty: item.qty + delta } : item).filter(item => item.qty > 0))
   }
 
+  async function checkout() {
+    if (!user) { setCartOpen(false); setLoginOpen(true); return }
+    const { data: sessionData } = await supabase.auth.getSession()
+    const customerId = sessionData.session?.user?.id
+    if (!customerId) { setCartOpen(false); setLoginOpen(true); return }
+    const { data: order, error } = await supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'pending' }).select().single()
+    if (error) { setLoginError(`Não foi possível criar o pedido: ${error.message}`); return }
+    const { error: itemsError } = await supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty })))
+    if (itemsError) { setLoginError(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`); return }
+    setOrders(current => [{ ...order, order_items: cart.map(item => ({ product_name: item.name, unit_price: item.price, quantity: item.qty })) }, ...current])
+    setCart([]); setCartOpen(false); setAccountOpen(true)
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    setUser(null); setOrders([]); setAdminOpen(false); setAccountOpen(false)
+  }
+
   return <main>
     <div className="announcement"><Icon name="spark" size={15} /> FRETE GRÁTIS ACIMA DE ¥5.000 <span>·</span> PRECISÃO EM CADA CAMADA</div>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="MG3D início"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a>
       <nav><a href="#colecao">Coleção</a><a href="#processo">Como fazemos</a><a href="#sobre">Sobre a MG3D</a></nav>
-      <div className="header-actions"><label className="search"><Icon name="search" size={18} /><input aria-label="Buscar produtos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="account-button" onClick={() => user ? (user.isAdmin ? setAdminOpen(true) : null) : setLoginOpen(true)}>{user ? (user.isAdmin ? 'Painel admin' : 'Minha conta') : 'Entrar'}</button><button className="bag-button" onClick={() => setCartOpen(true)} aria-label="Abrir carrinho"><Icon name="bag" size={21} />{cartCount > 0 && <b>{cartCount}</b>}</button></div>
+      <div className="header-actions"><label className="search"><Icon name="search" size={18} /><input aria-label="Buscar produtos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="account-button" onClick={() => user ? (user.isAdmin ? setAdminOpen(true) : setAccountOpen(true)) : setLoginOpen(true)}>{user ? (user.isAdmin ? 'Painel admin' : 'Minha conta') : 'Entrar'}</button><button className="bag-button" onClick={() => setCartOpen(true)} aria-label="Abrir carrinho"><Icon name="bag" size={21} />{cartCount > 0 && <b>{cartCount}</b>}</button></div>
     </header>
 
     <section className="hero" id="top">
@@ -145,8 +188,10 @@ export default function Home() {
 
     {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p>{loginMessage && <p className="login-success">{loginMessage}</p>}<form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
 
-    {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button></div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><div className="admin-session"><span>{user.email}</span><button onClick={() => { setUser(null); setAdminOpen(false) }}>Sair da conta</button></div></>}</section></div>}
+    {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button onClick={() => setCustomerPanelOpen(current => !current)}><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button>{customerPanelOpen && <div className="admin-customer-list"><strong>Clientes cadastrados</strong>{customers.length ? customers.map(customer => <div key={customer.id}><span>{customer.name || 'Cliente'}</span><small>{customer.email}</small><b>{customer.is_admin ? 'Administrador' : 'Cliente'}</b></div>) : <p>Nenhum cliente autenticado ainda.</p>}</div>}</div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><div className="admin-session"><span>{user.email}</span><button onClick={signOut}>Sair da conta</button></div></>}</section></div>}
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full">Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
+    {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Recebido' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
+
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout}>Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
   </main>
 }
