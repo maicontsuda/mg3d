@@ -12,13 +12,38 @@ const slugify = value => value.toString().normalize('NFD').replace(/[\u0300-\u03
 
 function ProductForm({ product, onSave, onCancel }) {
   const [form, setForm] = useState(product || emptyProduct)
+  const [adminKey, setAdminKey] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [uploadError, setUploadError] = useState('')
   const update = (key, value) => setForm(current => ({ ...current, [key]: value }))
+
+  async function uploadMedia(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!adminKey.trim()) { setUploadError('Informe a chave de upload configurada no Vercel.'); event.target.value = ''; return }
+    const resourceType = file.type.startsWith('video/') ? 'video' : (file.type.startsWith('image/') ? 'image' : 'raw')
+    setUploading(true); setUploadError(''); setUploadMessage('Preparando upload...')
+    try {
+      const signedResponse = await fetch('/api/cloudinary/sign', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-mg3d-admin-key': adminKey.trim() }, body: JSON.stringify({ folder: 'mg3d/products' }) })
+      const signed = await signedResponse.json()
+      if (!signedResponse.ok) throw new Error(signed.error || 'Não foi possível assinar o upload.')
+      const payload = new FormData()
+      payload.append('file', file); payload.append('api_key', signed.apiKey); payload.append('timestamp', signed.timestamp); payload.append('signature', signed.signature); payload.append('folder', signed.folder)
+      const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${signed.cloudName}/${resourceType}/upload`, { method: 'POST', body: payload })
+      const uploaded = await uploadResponse.json()
+      if (!uploadResponse.ok) throw new Error(uploaded.error?.message || 'O Cloudinary recusou o arquivo.')
+      update('image', uploaded.secure_url); setUploadMessage(`${file.name} enviado com sucesso.`); sessionStorage.setItem('mg3d-upload-key', adminKey.trim())
+    } catch (error) { setUploadError(error.message || 'Falha ao enviar o arquivo.'); setUploadMessage('') } finally { setUploading(false); event.target.value = '' }
+  }
+
   function submit(event) {
     event.preventDefault()
     if (!form.name.trim() || !form.price || !form.image.trim()) return
     onSave({ ...form, id: form.id || Date.now(), slug: form.slug || slugify(form.name), price: Number(form.price), active: form.active !== false })
   }
-  return <form className="admin-product-form" onSubmit={submit}><div className="admin-form-head"><div><p className="eyebrow"><span></span> Catálogo</p><h3>{product ? 'Editar produto' : 'Novo produto'}</h3></div><button type="button" className="modal-close" onClick={onCancel} aria-label="Fechar formulário"><Icon name="x" /></button></div><div className="admin-form-grid"><label>Nome<input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="Ex.: Vaso Orbit" /></label><label>Preço em ienes<input required min="1" type="number" value={form.price || ''} onChange={e => update('price', e.target.value)} placeholder="1490" /></label><label>Categoria<select value={form.category} onChange={e => update('category', e.target.value)}><option>Casa</option><option>Luz</option><option>Organização</option></select></label><label>Material<select value={form.material} onChange={e => update('material', e.target.value)}><option>PLA</option><option>PETG</option><option>TPU</option></select></label><label>Cor principal<input value={form.color} onChange={e => update('color', e.target.value)} placeholder="Azul" /></label><label>Cores disponíveis<input value={form.colors} onChange={e => update('colors', e.target.value)} placeholder="Azul, branco e preto" /></label><label>Dimensões<input value={form.dimensions} onChange={e => update('dimensions', e.target.value)} placeholder="20 × 15 × 10 cm" /></label><label>Prazo de produção<input value={form.production} onChange={e => update('production', e.target.value)} placeholder="3 a 5 dias úteis" /></label><label className="admin-form-wide">URL da imagem<input required value={form.image} onChange={e => update('image', e.target.value)} placeholder="https://..." /></label><label className="admin-form-wide">Resumo curto<input value={form.desc} onChange={e => update('desc', e.target.value)} placeholder="Uma descrição para a coleção" /></label><label className="admin-form-wide">Descrição completa<textarea rows="3" value={form.details} onChange={e => update('details', e.target.value)} placeholder="Conte a história e os detalhes do produto" /></label></div><div className="admin-form-actions"><button type="button" className="detail-contact" onClick={onCancel}>Cancelar</button><button className="button button-dark" type="submit">Salvar produto <Icon name="check" size={17} /></button></div></form>
+
+  return <form className="admin-product-form" onSubmit={submit}><div className="admin-form-head"><div><p className="eyebrow"><span></span> Catálogo</p><h3>{product ? 'Editar produto' : 'Novo produto'}</h3></div><button type="button" className="modal-close" onClick={onCancel} aria-label="Fechar formulário"><Icon name="x" /></button></div><div className="admin-form-grid"><label>Nome<input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="Ex.: Vaso Orbit" /></label><label>Preço em ienes<input required min="1" type="number" value={form.price || ''} onChange={e => update('price', e.target.value)} placeholder="1490" /></label><label>Categoria<select value={form.category} onChange={e => update('category', e.target.value)}><option>Casa</option><option>Luz</option><option>Organização</option></select></label><label>Material<select value={form.material} onChange={e => update('material', e.target.value)}><option>PLA</option><option>PETG</option><option>TPU</option></select></label><label>Cor principal<input value={form.color} onChange={e => update('color', e.target.value)} placeholder="Azul" /></label><label>Cores disponíveis<input value={form.colors} onChange={e => update('colors', e.target.value)} placeholder="Azul, branco e preto" /></label><label>Dimensões<input value={form.dimensions} onChange={e => update('dimensions', e.target.value)} placeholder="20 × 15 × 10 cm" /></label><label>Prazo de produção<input value={form.production} onChange={e => update('production', e.target.value)} placeholder="3 a 5 dias úteis" /></label><label className="admin-form-wide">Chave de upload<input type="password" value={adminKey} onChange={e => setAdminKey(e.target.value)} placeholder="MG3D_ADMIN_UPLOAD_KEY" autoComplete="off" /><small>Usada somente para autorizar este upload; nunca é enviada ao banco.</small></label><label className="admin-form-wide">Mídia do produto<input type="file" accept="image/*,video/*,.pdf,.stl,.zip" onChange={uploadMedia} disabled={uploading} />{uploading && <small>Enviando para o Cloudinary...</small>}{uploadMessage && <small className="upload-success">{uploadMessage}</small>}{uploadError && <small className="form-error">{uploadError}</small>}<input required value={form.image} onChange={e => update('image', e.target.value)} placeholder="URL Cloudinary ou arquivo enviado" /></label><label className="admin-form-wide">Resumo curto<input value={form.desc} onChange={e => update('desc', e.target.value)} placeholder="Uma descrição para a coleção" /></label><label className="admin-form-wide">Descrição completa<textarea rows="3" value={form.details} onChange={e => update('details', e.target.value)} placeholder="Conte a história e os detalhes do produto" /></label></div><div className="admin-form-actions"><button type="button" className="detail-contact" onClick={onCancel}>Cancelar</button><button className="button button-dark" type="submit" disabled={uploading}>Salvar produto <Icon name="check" size={17} /></button></div></form>
 }
 
 function Icon({ name, size = 20 }) {
