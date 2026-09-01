@@ -6,6 +6,7 @@ import { products, categories, formatJPY } from './catalog'
 import { supabase } from './lib/supabase'
 
 const ADMIN_EMAIL = 'maicontsuda@gmail.com'
+const AUTH_REDIRECT_URL = 'https://mg3d.vercel.app'
 const emptyProduct = { name: '', category: 'Casa', price: 0, color: '', material: 'PLA', dimensions: '', production: '3 a 5 dias úteis', colors: '', image: '', desc: '', details: '', badge: '', active: true }
 const slugify = value => value.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
@@ -128,7 +129,7 @@ export default function Home() {
     event.preventDefault()
     const email = loginEmail.trim().toLowerCase()
     if (!email || !email.includes('@')) { setLoginError('Digite um e-mail válido.'); return }
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: AUTH_REDIRECT_URL } })
     if (error) { setLoginError(error.message); return }
     setLoginError(''); setLoginMessage('Enviamos um link de acesso para o seu e-mail. Abra-o para concluir o login.'); setLoginEmail('')
   }
