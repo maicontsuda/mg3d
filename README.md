@@ -36,3 +36,9 @@ As imagens do catálogo e da página inicial agora são entregues pela CDN do Cl
 Para ativar o upload no Vercel, configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` e `MG3D_ADMIN_UPLOAD_KEY`. A última variável deve ser um segredo novo, criado especificamente para a área administrativa. Nunca coloque o API secret em `NEXT_PUBLIC_*` nem no repositório. A rota aceita apenas pastas iniciadas por `mg3d/` e exige o header `x-mg3d-admin-key`.
 
 A conta Cloudinary foi validada e recebeu a pasta `mg3d`, com seis imagens migradas para `mg3d/products`. O `ProductForm` do painel administrativo agora envia imagens, vídeos e arquivos (`PDF`, `STL` e `ZIP`) diretamente ao Cloudinary, preenche a URL segura retornada e salva essa URL na coluna `products.image`. Vídeos e arquivos usam a mesma assinatura, mudando automaticamente o `resource_type` no upload.
+
+## Notificações de pedidos
+
+A alteração de status agora passa por `app/api/orders/status/route.js`, que valida o token Supabase e o e-mail administrador antes de atualizar o pedido. O endpoint tenta notificar o cliente por e-mail usando Resend e por WhatsApp usando Twilio, sem bloquear a atualização caso um provedor ainda não esteja configurado. O painel inclui busca por nome/e-mail e filtro por status.
+
+Para e-mail, configure `RESEND_API_KEY` e `RESEND_FROM_EMAIL`. Para WhatsApp, configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` e salve o telefone do cliente no campo `customers.phone` em formato internacional, por exemplo `+819012345678`. As credenciais devem ser adicionadas somente nas variáveis privadas do Vercel.

@@ -48,7 +48,13 @@ function ProductForm({ product, onSave, onCancel }) {
 
 function AdminOrders({ orders, onStatusChange }) {
   const labels = { pending: 'Recebido', processing: 'Em produção', shipped: 'Enviado', delivered: 'Entregue', cancelled: 'Cancelado' }
-  return <div className="admin-orders"><div className="admin-list-head"><strong>Pedidos em tempo real</strong><span>{orders.length} pedido{orders.length === 1 ? '' : 's'}</span></div>{orders.length ? orders.map(order => <div className="admin-order-row" key={order.id}><div><strong>#{order.id} · {order.customers?.name || order.customers?.email || 'Cliente'}</strong><small>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</small><small>{new Date(order.created_at).toLocaleString('ja-JP')} · {formatJPY(order.total)}</small></div><select value={order.status} onChange={event => onStatusChange(order.id, event.target.value)} aria-label={`Status do pedido ${order.id}`}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>) : <p className="admin-empty">Nenhum pedido registrado ainda.</p>}</div>
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const visibleOrders = orders.filter(order => {
+    const customer = `${order.customers?.name || ''} ${order.customers?.email || ''}`.toLowerCase()
+    return (statusFilter === 'all' || order.status === statusFilter) && customer.includes(customerSearch.toLowerCase().trim())
+  })
+  return <div className="admin-orders"><div className="admin-list-head"><strong>Pedidos em tempo real</strong><span>{visibleOrders.length} de {orders.length}</span></div><div className="order-filters"><input aria-label="Buscar por nome ou e-mail do cliente" value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder="Buscar cliente..." /><select aria-label="Filtrar por status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos os status</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>{visibleOrders.length ? visibleOrders.map(order => <div className="admin-order-row" key={order.id}><div><strong>#{order.id} · {order.customers?.name || order.customers?.email || 'Cliente'}</strong><small>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</small><small>{new Date(order.created_at).toLocaleString('ja-JP')} · {formatJPY(order.total)}</small></div><select value={order.status} onChange={event => onStatusChange(order.id, event.target.value)} aria-label={`Status do pedido ${order.id}`}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>) : <p className="admin-empty">Nenhum pedido corresponde aos filtros.</p>}</div>
 }
 
 function Icon({ name, size = 20 }) {
@@ -129,7 +135,7 @@ export default function Home() {
   }, [])
 
   async function syncCustomer(current) {
-    await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
+    await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], phone: current.user_metadata?.phone || current.phone || null, is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
   }
 
   function fromDbProduct(item) { return { ...item, desc: item.description || '', active: item.active !== false } }
@@ -145,9 +151,14 @@ export default function Home() {
   }
 
   async function updateOrderStatus(id, status) {
-    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
-    if (error) { setLoginError(`Não foi possível atualizar o pedido: ${error.message}`); return }
-    setAdminOrders(current => current.map(order => order.id === id ? { ...order, status, updated_at: new Date().toISOString() } : order))
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    const response = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` }, body: JSON.stringify({ id, status }) })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) { setLoginError(`Não foi possível atualizar o pedido: ${result.error || 'erro desconhecido'}`); return }
+    setAdminOrders(current => current.map(order => order.id === id ? { ...order, ...result.order } : order))
+    const failed = result.notifications?.filter(item => !item.sent) || []
+    if (failed.length === 2) setLoginError('Pedido atualizado. Configure RESEND ou Twilio no Vercel para enviar notificações.')
   }
 
   async function removeProduct(id) {
