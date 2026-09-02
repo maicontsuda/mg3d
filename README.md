@@ -59,3 +59,10 @@ O arquivo `.env.example` contém o modelo dessas variáveis. O endpoint atualiza
 ## Documento imprimível do pedido
 
 O painel administrativo agora tem o botão `Imprimir nota` em cada pedido. Ele gera uma página separada com MG3D, número do pedido, cliente, e-mail, status, data, itens, quantidades e total em ienes. A janela de impressão permite imprimir em papel ou salvar como PDF. O documento é uma nota de conferência/expedição; não substitui uma nota fiscal oficial ou recibo fiscal emitido conforme as regras aplicáveis.
+
+
+## Pagamentos Stripe
+
+O checkout usa uma Checkout Session do Stripe em JPY e redireciona o cliente para a página hospedada do Stripe. Com os métodos ativados no Dashboard, o Stripe pode oferecer PayPay, Konbini, cartões e carteiras elegíveis dinamicamente. O pedido começa como `awaiting_payment`/`unpaid`; somente o webhook `checkout.session.completed` ou `checkout.session.async_payment_succeeded` muda o pedido para `pending`/`paid` e baixa o estoque. Sessões expiradas ou pagamentos assíncronos falhos são marcados como cancelados/failed.
+
+Configure as variáveis do `.env.example` no Vercel. A `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e `SUPABASE_SERVICE_ROLE_KEY` são privadas. O endpoint do webhook é `https://mg3d.vercel.app/api/stripe/webhook` e deve receber pelo menos `checkout.session.completed`; pagamentos reais exigem trocar as chaves `sk_test`/`pk_test` pelas chaves live depois que a conta Stripe estiver ativada.

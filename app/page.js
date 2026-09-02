@@ -231,13 +231,15 @@ export default function Home() {
     const { data: sessionData } = await supabase.auth.getSession()
     const customerId = sessionData.session?.user?.id
     if (!customerId) { setCartOpen(false); setLoginOpen(true); return }
-    const { data: order, error } = await supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'pending' }).select().single()
+    const { data: order, error } = await supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'awaiting_payment', payment_provider: 'stripe', payment_status: 'unpaid' }).select().single()
     if (error) { setLoginError(`Não foi possível criar o pedido: ${error.message}`); return }
     const { error: itemsError } = await supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty })))
     if (itemsError) { setLoginError(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`); return }
-    setOrders(current => [{ ...order, order_items: cart.map(item => ({ product_name: item.name, unit_price: item.price, quantity: item.qty })) }, ...current])
-    await Promise.all(cart.filter(item => typeof item.id === 'number').map(item => supabase.from('products').update({ stock_quantity: Math.max(0, Number(item.stock_quantity || 0) - item.qty), updated_at: new Date().toISOString() }).eq('id', item.id)))
-    setCart([]); setCartOpen(false); setAccountOpen(true)
+    const { data: paymentSessionData } = await supabase.auth.getSession()
+    const response = await fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${paymentSessionData.session?.access_token || ''}` }, body: JSON.stringify({ orderId: order.id }) })
+    const checkout = await response.json().catch(() => ({}))
+    if (!response.ok || !checkout.url) { setLoginError(checkout.error || 'Não foi possível abrir o pagamento Stripe.'); return }
+    setCart([]); setCartOpen(false); window.location.assign(checkout.url)
   }
 
   async function signOut() {
