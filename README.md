@@ -55,3 +55,7 @@ A loja informa ao cliente se há unidades em estoque, se o item está disponíve
 O código está pronto para envio real, mas os provedores precisam ser ativados com credenciais próprias. Para e-mail, crie uma API key no [Resend](https://resend.com), verifique o domínio remetente e configure `RESEND_API_KEY` e `RESEND_FROM_EMAIL` nas variáveis privadas do Vercel. Para WhatsApp, ative o WhatsApp Business no [Twilio](https://www.twilio.com/whatsapp), configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` e `TWILIO_WHATSAPP_FROM`; o telefone em `customers.phone` deve estar em formato E.164, como `+819012345678`.
 
 O arquivo `.env.example` contém o modelo dessas variáveis. O endpoint atualiza o pedido primeiro e trata o envio em seguida: se um provedor estiver indisponível, o pedido continua atualizado e o painel informa a configuração pendente. A mesma mudança de status não é reenviada quando o administrador seleciona o status já salvo.
+
+## Documento imprimível do pedido
+
+O painel administrativo agora tem o botão `Imprimir nota` em cada pedido. Ele gera uma página separada com MG3D, número do pedido, cliente, e-mail, status, data, itens, quantidades e total em ienes. A janela de impressão permite imprimir em papel ou salvar como PDF. O documento é uma nota de conferência/expedição; não substitui uma nota fiscal oficial ou recibo fiscal emitido conforme as regras aplicáveis.
