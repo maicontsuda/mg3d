@@ -42,3 +42,9 @@ A conta Cloudinary foi validada e recebeu a pasta `mg3d`, com seis imagens migra
 A alteração de status agora passa por `app/api/orders/status/route.js`, que valida o token Supabase e o e-mail administrador antes de atualizar o pedido. O endpoint tenta notificar o cliente por e-mail usando Resend e por WhatsApp usando Twilio, sem bloquear a atualização caso um provedor ainda não esteja configurado. O painel inclui busca por nome/e-mail e filtro por status.
 
 Para e-mail, configure `RESEND_API_KEY` e `RESEND_FROM_EMAIL`. Para WhatsApp, configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` e salve o telefone do cliente no campo `customers.phone` em formato internacional, por exemplo `+819012345678`. As credenciais devem ser adicionadas somente nas variáveis privadas do Vercel.
+
+## Estoque, encomendas e arquivos técnicos
+
+O cadastro administrativo agora possui quantidade em estoque, opção para aceitar encomendas quando o estoque chegar a zero, prazo de produção, checkbox para exibir ou ocultar a foto pública e campo para armazenar um arquivo técnico ou link interno. O arquivo técnico é salvo em `products.admin_file_url` e não é exibido na loja. A imagem pública pode ser ocultada com `products.photo_visible` sem remover o asset do Cloudinary.
+
+A loja informa ao cliente se há unidades em estoque, se o item está disponível por encomenda e qual é o prazo de produção. Pedidos confirmados reduzem a quantidade disponível no banco; produtos sem estoque e sem encomenda são bloqueados para o carrinho.

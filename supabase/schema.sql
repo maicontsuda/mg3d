@@ -14,6 +14,10 @@ create table if not exists public.products (
   dimensions text default '',
   production text default '',
   colors text default '',
+  stock_quantity integer not null default 0 check (stock_quantity >= 0),
+  allow_preorder boolean not null default true,
+  photo_visible boolean not null default true,
+  admin_file_url text,
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
