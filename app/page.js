@@ -96,6 +96,7 @@ export default function Home() {
   const [loginEmail, setLoginEmail] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
+  const [checkoutState, setCheckoutState] = useState('idle')
   const [accountOpen, setAccountOpen] = useState(false)
   const [orders, setOrders] = useState([])
   const [customers, setCustomers] = useState([])
@@ -227,19 +228,37 @@ export default function Home() {
   }
 
   async function checkout() {
-    if (!user) { setCartOpen(false); setLoginOpen(true); return }
-    const { data: sessionData } = await supabase.auth.getSession()
-    const customerId = sessionData.session?.user?.id
-    if (!customerId) { setCartOpen(false); setLoginOpen(true); return }
-    const { data: order, error } = await supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'awaiting_payment', payment_provider: 'stripe', payment_status: 'unpaid' }).select().single()
-    if (error) { setLoginError(`Não foi possível criar o pedido: ${error.message}`); return }
-    const { error: itemsError } = await supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty })))
-    if (itemsError) { setLoginError(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`); return }
-    const { data: paymentSessionData } = await supabase.auth.getSession()
-    const response = await fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${paymentSessionData.session?.access_token || ''}` }, body: JSON.stringify({ orderId: order.id }) })
-    const checkout = await response.json().catch(() => ({}))
-    if (!response.ok || !checkout.url) { setLoginError(checkout.error || 'Não foi possível abrir o pagamento Stripe.'); return }
-    setCart([]); setCartOpen(false); window.location.assign(checkout.url)
+    const trace = `[MG3D checkout ${new Date().toISOString()}]`
+    const timeout = (promise, label, ms = 12000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} demorou mais de ${ms / 1000}s.`)), ms))])
+    setLoginError('')
+    setCheckoutState('loading')
+    console.info(trace, 'início', { cartItems: cart.length, cartTotal })
+    try {
+      if (!user) { console.warn(trace, 'sem usuário autenticado'); setCartOpen(false); setLoginOpen(true); return }
+      console.info(trace, 'obtendo sessão')
+      const { data: sessionData } = await timeout(supabase.auth.getSession(), 'A sessão de login', 8000)
+      const customerId = sessionData.session?.user?.id
+      if (!customerId) { console.warn(trace, 'sessão sem usuário'); setCartOpen(false); setLoginOpen(true); return }
+      console.info(trace, 'criando pedido local')
+      const { data: order, error } = await timeout(supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'awaiting_payment', payment_provider: 'stripe', payment_status: 'unpaid' }).select().single(), 'A criação do pedido')
+      if (error) throw new Error(`Não foi possível criar o pedido: ${error.message}`)
+      console.info(trace, 'pedido criado', { orderId: order.id })
+      const { error: itemsError } = await timeout(supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty }))), 'O salvamento dos itens')
+      if (itemsError) throw new Error(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`)
+      const { data: paymentSessionData } = await timeout(supabase.auth.getSession(), 'A renovação da sessão', 8000)
+      console.info(trace, 'chamando API Stripe', { orderId: order.id })
+      const response = await timeout(fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${paymentSessionData.session?.access_token || ''}` }, body: JSON.stringify({ orderId: order.id }) }), 'A API de checkout')
+      const checkout = await response.json().catch(() => ({}))
+      if (!response.ok || !checkout.url) throw new Error(checkout.error || `A API de checkout respondeu HTTP ${response.status}.`)
+      console.info(trace, 'sessão Stripe criada; redirecionando', { orderId: order.id })
+      setCart([]); setCartOpen(false); window.location.assign(checkout.url)
+    } catch (error) {
+      console.error(trace, 'falha', { message: error.message })
+      setCheckoutState('error')
+      setLoginError(error.message || 'Não foi possível iniciar o pagamento.')
+    } finally {
+      setCheckoutState(current => current === 'loading' ? 'idle' : current)
+    }
   }
 
   async function signOut() {
@@ -276,6 +295,6 @@ export default function Home() {
 
     {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Recebido' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout}>Finalizar pedido <Icon name="arrow" size={17} /></button></div></>}</aside></div>}
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Finalizar pedido'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
   </main>
 }
