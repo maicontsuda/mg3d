@@ -17,7 +17,7 @@ export async function POST(request) {
   if (itemsError || !items?.length) return Response.json({ error: 'O pedido não possui itens.' }, { status: 400 })
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
   const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://mg3d.vercel.app'
-  const session = await stripe.checkout.sessions.create({ mode: 'payment', customer_email: user.email, line_items: items.map(item => ({ price_data: { currency: 'jpy', product_data: { name: item.product_name }, unit_amount: item.unit_price }, quantity: item.quantity })), automatic_payment_methods: { enabled: true }, metadata: { order_id: String(orderId), customer_id: user.id }, success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${origin}/?payment=cancelled` })
+  const session = await stripe.checkout.sessions.create({ mode: 'payment', customer_email: user.email, line_items: items.map(item => ({ price_data: { currency: 'jpy', product_data: { name: item.product_name }, unit_amount: item.unit_price }, quantity: item.quantity })), metadata: { order_id: String(orderId), customer_id: user.id }, success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${origin}/?payment=cancelled` })
   const { error: updateError } = await supabase.from('orders').update({ payment_provider: 'stripe', payment_session_id: session.id, status: 'awaiting_payment' }).eq('id', orderId)
   if (updateError) { await stripe.checkout.sessions.expire(session.id).catch(() => {}); return Response.json({ error: updateError.message }, { status: 400 }) }
   return Response.json({ url: session.url, sessionId: session.id })
