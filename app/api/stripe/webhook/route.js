@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { MG3D_SUPABASE_URL } from '../../../lib/supabase-config'
 
 export async function POST(request) {
   const secret = process.env.STRIPE_SECRET_KEY
@@ -14,7 +15,7 @@ export async function POST(request) {
     const session = event.data.object
     const orderId = Number(session.metadata?.order_id)
     if (Number.isInteger(orderId)) {
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      const supabase = createClient(MG3D_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
       const { data: order } = await supabase.from('orders').select('id,payment_status').eq('id', orderId).single()
       if (order && order.payment_status !== 'paid') {
         await supabase.from('orders').update({ status: 'pending', payment_status: 'paid', payment_intent_id: session.payment_intent || null, updated_at: new Date().toISOString() }).eq('id', orderId)
@@ -30,7 +31,7 @@ export async function POST(request) {
   if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
     const orderId = Number(event.data.object.metadata?.order_id)
     if (Number.isInteger(orderId)) {
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      const supabase = createClient(MG3D_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
       await supabase.from('orders').update({ status: 'cancelled', payment_status: 'failed', updated_at: new Date().toISOString() }).eq('id', orderId).eq('payment_status', 'unpaid')
     }
   }

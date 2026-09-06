@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { MG3D_SUPABASE_URL } from '../../../lib/supabase-config'
 
 const statusLabels = { pending: 'Recebido', processing: 'Em produção', shipped: 'Enviado', delivered: 'Entregue', cancelled: 'Cancelado' }
 
@@ -22,7 +23,7 @@ async function sendWhatsApp(order, message) {
 }
 
 export async function POST(request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseUrl = MG3D_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const authorization = request.headers.get('authorization')
   if (!supabaseUrl || !supabaseAnonKey || !authorization?.startsWith('Bearer ')) return Response.json({ error: 'Sessão inválida.' }, { status: 401 })

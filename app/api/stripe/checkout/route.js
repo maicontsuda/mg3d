@@ -1,12 +1,13 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { MG3D_SUPABASE_URL } from '../../../lib/supabase-config'
 
 export async function POST(request) {
   if (!process.env.STRIPE_SECRET_KEY) return Response.json({ error: 'Stripe ainda não está configurado no servidor.' }, { status: 503 })
   const authorization = request.headers.get('authorization')
   if (!authorization?.startsWith('Bearer ')) return Response.json({ error: 'Sessão inválida.' }, { status: 401 })
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
+    MG3D_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY,
     { global: { headers: { Authorization: authorization } } },
   )
