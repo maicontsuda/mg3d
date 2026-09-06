@@ -5,7 +5,11 @@ export async function POST(request) {
   if (!process.env.STRIPE_SECRET_KEY) return Response.json({ error: 'Stripe ainda não está configurado no servidor.' }, { status: 503 })
   const authorization = request.headers.get('authorization')
   if (!authorization?.startsWith('Bearer ')) return Response.json({ error: 'Sessão inválida.' }, { status: 401 })
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { global: { headers: { Authorization: authorization } } })
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY,
+    { global: { headers: { Authorization: authorization } } },
+  )
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Faça login para continuar.' }, { status: 401 })
   const body = await request.json().catch(() => ({}))
