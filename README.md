@@ -4,7 +4,9 @@ Uma experiência de e-commerce para a MG3D, marca de objetos autorais produzidos
 
 ## Experiência
 
-A página inicial apresenta a coleção, busca por produto, filtros por categoria, carrinho persistente com controle de quantidade, manifesto da marca, processo de produção e cadastro de novidades. O cliente entra na conta, registra o pedido e envia o resumo pelo WhatsApp para combinar frete, prazo final e pagamento diretamente com a MG3D.
+A página inicial apresenta a coleção, busca por produto, filtros por categoria, carrinho persistente com controle de quantidade, manifesto da marca, perguntas frequentes e cadastro real de novidades. O cliente entra na conta, registra o pedido e envia o resumo pelo WhatsApp para combinar frete, prazo final e pagamento diretamente com a MG3D.
+
+A loja também inclui páginas de envios e trocas, cuidados com as peças e privacidade, além de metadados sociais, sitemap, robots e um atalho flutuante para atendimento quando o número do WhatsApp está configurado.
 
 ## Desenvolvimento
 
@@ -68,3 +70,7 @@ O checkout é conversacional. O carrinho fica salvo no navegador, inclusive dura
 Configure `NEXT_PUBLIC_WHATSAPP_NUMBER` no Vercel usando somente números, com código do país e DDD, por exemplo `819012345678`. A criação segura do pedido também exige `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SERVICE_ROLE_KEY`. A service role é privada e nunca deve usar o prefixo `NEXT_PUBLIC_`.
 
 Depois de aplicar `supabase/schema.sql`, clientes podem consultar os próprios pedidos, mas as inserções diretas ficam bloqueadas por RLS: somente a API server-side registra pedidos com os preços canônicos do catálogo.
+
+## Newsletter
+
+O formulário de novidades envia o e-mail para `app/api/newsletter/route.js`. A rota valida o endereço, usa um campo honeypot contra bots simples e grava em `newsletter_subscribers` com a service role. A tabela não possui política pública: visitantes não conseguem listar nem alterar inscritos diretamente.

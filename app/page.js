@@ -86,9 +86,20 @@ function Icon({ name, size = 20 }) {
     plus: <><path d="M12 5v14M5 12h14"/></>,
     x: <><path d="m6 6 12 12M18 6 6 18"/></>,
     check: <path d="m5 12 4 4L19 6"/>,
+    chat: <><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.5 9.5 0 0 1-4-.9L3 21l1.8-4.7A8.5 8.5 0 1 1 21 11.5Z"/><path d="M8.2 8.5c.8 3 2.3 4.5 5.3 5.3"/></>,
     spark: <><path d="m12 3 1.4 5.6L19 10l-5.6 1.4L12 17l-1.4-5.6L5 10l5.6-1.4L12 3Z"/><path d="m19 16 .5 2.5L22 19l-2.5.5L19 22l-.5-2.5L16 19l2.5-.5L19 16Z"/></>,
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
+}
+
+function FaqSection() {
+  const questions = [
+    ['Como faço um pedido?', 'Adicione as peças ao carrinho, entre na sua conta e envie o resumo pelo WhatsApp. O pedido fica registrado para acompanhamento.'],
+    ['Como funciona o pagamento?', 'A forma de pagamento é apresentada e combinada diretamente pelo WhatsApp antes da confirmação do pedido.'],
+    ['Qual é o prazo?', 'Cada produto mostra uma estimativa de produção. O prazo total, incluindo envio, é confirmado na conversa conforme a quantidade e o destino.'],
+    ['Vocês fazem peças personalizadas?', 'Projetos personalizados podem ser avaliados pelo WhatsApp. Envie sua ideia, referências e medidas para receber uma orientação inicial.'],
+  ]
+  return <section className="faq section" id="duvidas"><div className="faq-heading"><p className="eyebrow"><span></span> Antes de pedir</p><h2>Dúvidas <i>frequentes.</i></h2><p>Pedido registrado no site, conversa direta com a MG3D e nenhuma surpresa antes do pagamento.</p></div><div className="faq-list">{questions.map(([question, answer], index) => <details key={question}><summary><span>{String(index + 1).padStart(2, '0')}</span>{question}<b>＋</b></summary><p>{answer}</p></details>)}</div></section>
 }
 
 export default function Home() {
@@ -98,6 +109,8 @@ export default function Home() {
   const [cartReady, setCartReady] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [newsletter, setNewsletter] = useState('')
+  const [newsletterState, setNewsletterState] = useState('idle')
+  const [newsletterError, setNewsletterError] = useState('')
   const [subscribed, setSubscribed] = useState(false)
   const [user, setUser] = useState(null)
   const [loginOpen, setLoginOpen] = useState(false)
@@ -313,6 +326,28 @@ export default function Home() {
     }
   }
 
+  async function subscribeNewsletter(event) {
+    event.preventDefault()
+    setNewsletterError('')
+    setNewsletterState('loading')
+    const formData = new FormData(event.currentTarget)
+    try {
+      const response = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newsletter, website: formData.get('website') }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Não foi possível concluir o cadastro.')
+      setSubscribed(true)
+      setNewsletter('')
+      setNewsletterState('success')
+    } catch (error) {
+      setNewsletterState('error')
+      setNewsletterError(error.message || 'Não foi possível concluir o cadastro.')
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null); setOrders([]); setAdminOpen(false); setAccountOpen(false)
@@ -322,7 +357,7 @@ export default function Home() {
     <div className="announcement"><Icon name="spark" size={15} /> PEDIDOS PELO WHATSAPP <span>·</span> PAGAMENTO E ENTREGA COMBINADOS DIRETAMENTE</div>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="MG3D início"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a>
-      <nav><a href="#colecao">Coleção</a><a href="#processo">Como fazemos</a><a href="#sobre">Sobre a MG3D</a></nav>
+      <nav><a href="#colecao">Coleção</a><a href="#processo">Como fazemos</a><a href="#duvidas">Dúvidas</a><a href="#sobre">Sobre a MG3D</a></nav>
       <div className="header-actions"><label className="search"><Icon name="search" size={18} /><input aria-label="Buscar produtos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="account-button" onClick={() => user ? (user.isAdmin ? setAdminOpen(true) : setAccountOpen(true)) : setLoginOpen(true)}>{user ? (user.isAdmin ? 'Painel admin' : 'Minha conta') : 'Entrar'}</button><button className="bag-button" onClick={() => setCartOpen(true)} aria-label="Abrir carrinho"><Icon name="bag" size={21} />{cartCount > 0 && <b>{cartCount}</b>}</button></div>
     </header>
 
@@ -333,13 +368,17 @@ export default function Home() {
 
     <section className="ticker"><span>IMPRESSO COM INTENÇÃO</span><span>✳</span><span>MENOS DESPERDÍCIO</span><span>✳</span><span>FEITO NO JAPÃO</span><span>✳</span><span>IMPRESSO COM INTENÇÃO</span></section>
 
-    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image">{product.photo_visible !== false ? <img src={product.image} alt={product.name} /> : <div className="product-image-hidden">Imagem reservada</div>}<span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3><Link href={`/produtos/${product.slug}`}>{product.name}</Link></h3><p>{product.desc}</p></div><strong>{formatJPY(product.price)}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
+    <section className="collection section" id="colecao"><div className="section-heading"><div><p className="eyebrow"><span></span> A coleção atual</p><h2>Pequenos objetos.<br /><i>Grande presença.</i></h2></div><p>Designs pensados para acompanhar seus rituais diários — da primeira luz do dia ao último café.</p></div><div className="filter-row"><div className="filters">{categories.map(item => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><span className="product-count">{filtered.length} peças encontradas</span></div><div className="product-grid">{filtered.map((product, index) => <article className={`product-card card-${index % 3}`} key={product.id}><div className="product-image">{product.photo_visible !== false ? <img src={product.image} alt={product.name} loading="lazy" decoding="async" /> : <div className="product-image-hidden">Imagem reservada</div>}<span className="product-badge">{product.badge || product.category}</span><button className="quick-add" onClick={() => addToCart(product)} aria-label={`Adicionar ${product.name}`}><Icon name="plus" size={18} /></button></div><div className="product-info"><div><h3><Link href={`/produtos/${product.slug}`}>{product.name}</Link></h3><p>{product.desc}</p></div><strong>{formatJPY(product.price)}</strong></div><div className="product-meta"><span>{product.color}</span><span>Produzido sob demanda</span></div></article>)}</div></section>
 
-    <section className="manifesto section" id="processo"><div className="manifesto-image"><div className="process-visual-art"><img className="process-logo" src="/logo-mg.webp" alt="Logo MG 3D Print" /></div><span className="process-caption">DO ARQUIVO<br /><i>AO OBJETO.</i></span></div><div className="manifesto-copy"><p className="eyebrow"><span></span> Nosso jeito de fazer</p><h2>Design consciente,<br /><i>sem linha de montagem.</i></h2><p>A gente acredita que uma boa peça nasce de uma boa pergunta: ela precisa existir? Cada produto MG3D é desenhado, impresso e finalizado por aqui, um de cada vez.</p><div className="values"><div><b>01</b><span><strong>Sob demanda</strong>produzimos o que você mais precisa.</span></div><div><b>02</b><span><strong>Material</strong>PLA, PETG e TPU — o material certo para cada produto.</span></div><div><b>03</b><span><strong>Feito por pessoas</strong>Do primeiro rascunho ao seu pacote.</span></div></div><a className="text-link" href="#sobre">Conheça nossa história <Icon name="arrow" size={16} /></a></div></section>
+    <section className="manifesto section" id="processo"><div className="manifesto-image"><div className="process-visual-art"><img className="process-logo" src="/logo-mg.webp" alt="Logo MG 3D Print" loading="lazy" decoding="async" /></div><span className="process-caption">DO ARQUIVO<br /><i>AO OBJETO.</i></span></div><div className="manifesto-copy"><p className="eyebrow"><span></span> Nosso jeito de fazer</p><h2>Design consciente,<br /><i>sem linha de montagem.</i></h2><p>A gente acredita que uma boa peça nasce de uma boa pergunta: ela precisa existir? Cada produto MG3D é desenhado, impresso e finalizado por aqui, um de cada vez.</p><div className="values"><div><b>01</b><span><strong>Sob demanda</strong>produzimos o que você mais precisa.</span></div><div><b>02</b><span><strong>Material</strong>PLA, PETG e TPU — o material certo para cada produto.</span></div><div><b>03</b><span><strong>Feito por pessoas</strong>Do primeiro rascunho ao seu pacote.</span></div></div><a className="text-link" href="#sobre">Conheça nossa história <Icon name="arrow" size={16} /></a></div></section>
 
-    <section className="newsletter section" id="sobre"><div><p className="eyebrow"><span></span> Entre para o clube</p><h2>Novidades que<br /><i>valem espaço.</i></h2></div><div><p>Receba lançamentos, bastidores e uma dose de inspiração — sem spam, prometemos.</p>{subscribed ? <div className="success"><Icon name="check" size={18} /> Você está na lista. Até breve!</div> : <form onSubmit={e => { e.preventDefault(); if (newsletter) setSubscribed(true) }}><input type="email" required placeholder="seu melhor e-mail" value={newsletter} onChange={e => setNewsletter(e.target.value)} /><button aria-label="Cadastrar e-mail"><Icon name="arrow" size={18} /></button></form>}<small>Ao assinar, você concorda com nossa política de privacidade.</small></div></section>
+    <FaqSection />
 
-    <footer><div className="footer-brand"><a className="brand" href="#top"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a><p>Objetos que ganham forma.<br />E um lugar na sua casa.</p></div><div className="footer-links"><div><b>Explorar</b><a href="#colecao">Coleção</a><a href="#processo">Nosso processo</a><a href="#sobre">Sobre nós</a></div><div><b>Ajuda</b><a href="#top">Envios e trocas</a><a href="#top">Cuidados com as peças</a><a href="#top">Fale com a gente</a></div></div><div className="footer-bottom"><span>© 2026 MG3D. Feito com intenção.</span><span>Instagram &nbsp;·&nbsp; Pinterest</span></div></footer>
+    <section className="newsletter section" id="sobre"><div><p className="eyebrow"><span></span> Entre para o clube</p><h2>Novidades que<br /><i>valem espaço.</i></h2></div><div><p>Receba lançamentos, bastidores e uma dose de inspiração — sem spam, prometemos.</p>{subscribed ? <div className="success"><Icon name="check" size={18} /> Você está na lista. Até breve!</div> : <form onSubmit={subscribeNewsletter}><input type="email" required placeholder="seu melhor e-mail" value={newsletter} onChange={e => setNewsletter(e.target.value)} /><input className="newsletter-honeypot" type="text" name="website" tabIndex="-1" autoComplete="off" aria-hidden="true" /><button disabled={newsletterState === 'loading'} aria-label="Cadastrar e-mail">{newsletterState === 'loading' ? '...' : <Icon name="arrow" size={18} />}</button></form>}{newsletterError && <p className="newsletter-error" role="alert">{newsletterError}</p>}<small>Ao assinar, você concorda com nossa <Link href="/privacidade">política de privacidade</Link>.</small></div></section>
+
+    <footer><div className="footer-brand"><a className="brand" href="#top"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a><p>Objetos que ganham forma.<br />E um lugar na sua casa.</p></div><div className="footer-links"><div><b>Explorar</b><a href="#colecao">Coleção</a><a href="#processo">Nosso processo</a><a href="#sobre">Sobre nós</a></div><div><b>Ajuda</b><Link href="/envios-e-trocas">Envios e trocas</Link><Link href="/cuidados">Cuidados com as peças</Link><Link href="/privacidade">Privacidade</Link></div></div><div className="footer-bottom"><span>© 2026 MG3D. Feito com intenção.</span><span>Instagram &nbsp;·&nbsp; Pinterest</span></div></footer>
+
+    {WHATSAPP_NUMBER && <a className="whatsapp-float" href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Olá! Gostaria de saber mais sobre os produtos da MG3D.')}`} target="_blank" rel="noreferrer" aria-label="Falar com a MG3D pelo WhatsApp"><Icon name="chat" size={22} /><span>Fale com a MG3D</span></a>}
 
     {loginOpen && <div className="overlay" onClick={() => setLoginOpen(false)}><section className="login-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setLoginOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Área exclusiva</p><h2>Entre na<br /><i>MG3D.</i></h2><p className="modal-copy">Acompanhe seus pedidos e tenha uma experiência mais pessoal.</p>{loginMessage && <p className="login-success">{loginMessage}</p>}<button className="google-login" type="button" onClick={handleGoogleLogin}><span className="google-g">G</span> Continuar com Google</button><div className="login-divider"><span>ou entre com e-mail</span></div><form onSubmit={handleLogin}><label>E-mail</label><input type="email" autoFocus required placeholder="voce@email.com" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />{loginError && <small className="form-error">{loginError}</small>}<button className="button button-dark full" type="submit">Continuar <Icon name="arrow" size={17} /></button></form><small className="modal-foot">Ao continuar, você concorda com os termos da MG3D.</small></section></div>}
 
