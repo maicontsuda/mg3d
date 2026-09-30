@@ -17,18 +17,22 @@ const getProduct = cache(async slug => {
     || process.env.SUPABASE_PUBLISHABLE_KEY
 
   if (publishableKey) {
-    const supabase = createClient(MG3D_SUPABASE_URL, publishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-    const { data } = await supabase.from('products').select('*').eq('slug', slug).eq('active', true).maybeSingle()
-    if (data) {
-      return {
-        ...data,
-        desc: data.description || '',
-        stock_quantity: Number(data.stock_quantity || 0),
-        allow_preorder: data.allow_preorder !== false,
-        photo_visible: data.photo_visible !== false,
+    try {
+      const supabase = createClient(MG3D_SUPABASE_URL, publishableKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+      const { data } = await supabase.from('products').select('*').eq('slug', slug).eq('active', true).maybeSingle()
+      if (data) {
+        return {
+          ...data,
+          desc: data.description || '',
+          stock_quantity: Number(data.stock_quantity || 0),
+          allow_preorder: data.allow_preorder !== false,
+          photo_visible: data.photo_visible !== false,
+        }
       }
+    } catch {
+      // Keep the demonstrative catalog available if Supabase is temporarily unreachable.
     }
   }
 
