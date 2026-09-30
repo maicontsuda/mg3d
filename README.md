@@ -4,7 +4,7 @@ Uma experiência de e-commerce para a MG3D, marca de objetos autorais produzidos
 
 ## Experiência
 
-A página inicial apresenta a coleção, busca por produto, filtros por categoria, carrinho lateral com controle de quantidade, manifesto da marca, processo de produção e cadastro de novidades.
+A página inicial apresenta a coleção, busca por produto, filtros por categoria, carrinho persistente com controle de quantidade, manifesto da marca, processo de produção e cadastro de novidades. O cliente entra na conta, registra o pedido e envia o resumo pelo WhatsApp para combinar frete, prazo final e pagamento diretamente com a MG3D.
 
 ## Desenvolvimento
 
@@ -27,7 +27,7 @@ npm start
 - CSS responsivo com identidade visual própria
 - Catálogo demonstrativo com produtos e imagens de referência
 
-O catálogo está estruturado no arquivo `app/page.js`, facilitando a substituição dos produtos demonstrativos pelos itens reais da MG3D e a integração posterior com estoque, pagamentos e logística.
+O catálogo demonstrativo está estruturado em `app/catalog.js`. Quando o Supabase possui produtos cadastrados, a loja usa os dados ativos do banco e o painel administrativo permite gerenciá-los.
 
 ## Cloudinary
 
@@ -47,7 +47,7 @@ Para e-mail, configure `RESEND_API_KEY` e `RESEND_FROM_EMAIL`. Para WhatsApp, co
 
 O cadastro administrativo agora possui quantidade em estoque, opção para aceitar encomendas quando o estoque chegar a zero, prazo de produção, checkbox para exibir ou ocultar a foto pública e campo para armazenar um arquivo técnico ou link interno. O arquivo técnico é salvo em `products.admin_file_url` e não é exibido na loja. A imagem pública pode ser ocultada com `products.photo_visible` sem remover o asset do Cloudinary.
 
-A loja informa ao cliente se há unidades em estoque, se o item está disponível por encomenda e qual é o prazo de produção. Pedidos confirmados reduzem a quantidade disponível no banco; produtos sem estoque e sem encomenda são bloqueados para o carrinho.
+A loja informa ao cliente se há unidades em estoque, se o item está disponível por encomenda e qual é o prazo de produção. Produtos sem estoque e sem encomenda são bloqueados no carrinho; depois da confirmação pelo WhatsApp, o estoque pode ser atualizado pelo painel administrativo.
 
 
 ### Ativação dos canais de notificação
@@ -61,8 +61,10 @@ O arquivo `.env.example` contém o modelo dessas variáveis. O endpoint atualiza
 O painel administrativo agora tem o botão `Imprimir nota` em cada pedido. Ele gera uma página separada com MG3D, número do pedido, cliente, e-mail, status, data, itens, quantidades e total em ienes. A janela de impressão permite imprimir em papel ou salvar como PDF. O documento é uma nota de conferência/expedição; não substitui uma nota fiscal oficial ou recibo fiscal emitido conforme as regras aplicáveis.
 
 
-## Pagamentos Stripe
+## Pedidos pelo WhatsApp
 
-O checkout usa uma Checkout Session do Stripe em JPY e redireciona o cliente para a página hospedada do Stripe. Com os métodos ativados no Dashboard, o Stripe pode oferecer PayPay, Konbini, cartões e carteiras elegíveis dinamicamente. O pedido começa como `awaiting_payment`/`unpaid`; somente o webhook `checkout.session.completed` ou `checkout.session.async_payment_succeeded` muda o pedido para `pending`/`paid` e baixa o estoque. Sessões expiradas ou pagamentos assíncronos falhos são marcados como cancelados/failed.
+O checkout é conversacional. O carrinho fica salvo no navegador, inclusive durante o login. Ao finalizar, `app/api/orders/create/route.js` autentica o cliente, consulta no Supabase os preços e a disponibilidade atuais e registra o pedido. Em seguida, a loja abre o WhatsApp com número do pedido, itens, quantidades e subtotal já preenchidos. Frete, prazo final e forma de pagamento são combinados na conversa.
 
-Configure as variáveis do `.env.example` no Vercel. A `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e `SUPABASE_SERVICE_ROLE_KEY` são privadas. O endpoint do webhook é `https://mg3d.vercel.app/api/stripe/webhook` e deve receber pelo menos `checkout.session.completed`; pagamentos reais exigem trocar as chaves `sk_test`/`pk_test` pelas chaves live depois que a conta Stripe estiver ativada.
+Configure `NEXT_PUBLIC_WHATSAPP_NUMBER` no Vercel usando somente números, com código do país e DDD, por exemplo `819012345678`. A criação segura do pedido também exige `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SERVICE_ROLE_KEY`. A service role é privada e nunca deve usar o prefixo `NEXT_PUBLIC_`.
+
+Depois de aplicar `supabase/schema.sql`, clientes podem consultar os próprios pedidos, mas as inserções diretas ficam bloqueadas por RLS: somente a API server-side registra pedidos com os preços canônicos do catálogo.

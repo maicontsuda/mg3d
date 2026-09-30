@@ -24,7 +24,7 @@ async function sendWhatsApp(order, message) {
 
 export async function POST(request) {
   const supabaseUrl = MG3D_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY
   const authorization = request.headers.get('authorization')
   if (!supabaseUrl || !supabaseAnonKey || !authorization?.startsWith('Bearer ')) return Response.json({ error: 'Sessão inválida.' }, { status: 401 })
 

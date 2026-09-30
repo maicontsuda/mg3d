@@ -6,9 +6,17 @@ import { products, categories, formatJPY } from './catalog'
 import { supabase } from './lib/supabase'
 
 const ADMIN_EMAIL = 'maicontsuda@gmail.com'
-const AUTH_REDIRECT_URL = 'https://mg3d.vercel.app'
+const WHATSAPP_NUMBER = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '').replace(/\D/g, '')
+const getAuthRedirectUrl = () => typeof window === 'undefined' ? 'https://mg3d.vercel.app' : window.location.origin
 const emptyProduct = { name: '', category: 'Casa', price: 0, stock_quantity: 0, allow_preorder: true, photo_visible: true, admin_file_url: '', color: '', material: 'PLA', dimensions: '', production: '3 a 5 dias úteis', colors: '', image: '', desc: '', details: '', badge: '', active: true }
 const slugify = value => value.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+
+async function syncCustomer(current) {
+  await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], phone: current.user_metadata?.phone || current.phone || null, is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
+}
+
+function fromDbProduct(item) { return { ...item, desc: item.description || '', stock_quantity: Number(item.stock_quantity || 0), allow_preorder: item.allow_preorder !== false, photo_visible: item.photo_visible !== false, admin_file_url: item.admin_file_url || '', active: item.active !== false } }
+function toDbProduct(product) { return { id: product.id, slug: product.slug || slugify(product.name), name: product.name, category: product.category, price: Number(product.price), stock_quantity: Math.max(0, Number(product.stock_quantity || 0)), allow_preorder: product.allow_preorder !== false, photo_visible: product.photo_visible !== false, admin_file_url: product.admin_file_url || null, color: product.color || '', badge: product.badge || '', image: product.image || '', description: product.desc || '', details: product.details || '', material: product.material || 'PLA', dimensions: product.dimensions || '', production: product.production || '', colors: product.colors || '', active: product.active !== false } }
 
 function ProductForm({ product, onSave, onCancel }) {
   const [form, setForm] = useState(product || emptyProduct)
@@ -87,6 +95,7 @@ export default function Home() {
   const [category, setCategory] = useState('Todos')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState([])
+  const [cartReady, setCartReady] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [newsletter, setNewsletter] = useState('')
   const [subscribed, setSubscribed] = useState(false)
@@ -105,6 +114,24 @@ export default function Home() {
   const [editingProduct, setEditingProduct] = useState(null)
   const [productFormOpen, setProductFormOpen] = useState(false)
   const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
+
+  useEffect(() => {
+    const restoreCart = window.setTimeout(() => {
+      try {
+        const savedCart = JSON.parse(localStorage.getItem('mg3d-cart') || '[]')
+        if (Array.isArray(savedCart)) setCart(savedCart)
+      } catch {
+        localStorage.removeItem('mg3d-cart')
+      } finally {
+        setCartReady(true)
+      }
+    }, 0)
+    return () => window.clearTimeout(restoreCart)
+  }, [])
+
+  useEffect(() => {
+    if (cartReady) localStorage.setItem('mg3d-cart', JSON.stringify(cart))
+  }, [cart, cartReady])
 
   useEffect(() => {
     let mounted = true
@@ -147,13 +174,6 @@ export default function Home() {
     })
     return () => { mounted = false; listener.subscription.unsubscribe(); supabase.removeChannel(orderChannel) }
   }, [])
-
-  async function syncCustomer(current) {
-    await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], phone: current.user_metadata?.phone || current.phone || null, is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
-  }
-
-  function fromDbProduct(item) { return { ...item, desc: item.description || '', stock_quantity: Number(item.stock_quantity || 0), allow_preorder: item.allow_preorder !== false, photo_visible: item.photo_visible !== false, admin_file_url: item.admin_file_url || '', active: item.active !== false } }
-  function toDbProduct(product) { return { id: product.id, slug: product.slug || slugify(product.name), name: product.name, category: product.category, price: Number(product.price), stock_quantity: Math.max(0, Number(product.stock_quantity || 0)), allow_preorder: product.allow_preorder !== false, photo_visible: product.photo_visible !== false, admin_file_url: product.admin_file_url || null, color: product.color || '', badge: product.badge || '', image: product.image || '', description: product.desc || '', details: product.details || '', material: product.material || 'PLA', dimensions: product.dimensions || '', production: product.production || '', colors: product.colors || '', active: product.active !== false } }
 
   async function saveProduct(product) {
     const payload = toDbProduct(product)
@@ -198,7 +218,7 @@ export default function Home() {
     event.preventDefault()
     const email = loginEmail.trim().toLowerCase()
     if (!email || !email.includes('@')) { setLoginError('Digite um e-mail válido.'); return }
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: AUTH_REDIRECT_URL } })
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: getAuthRedirectUrl() } })
     if (error) { setLoginError(error.message); return }
     setLoginError(''); setLoginMessage('Enviamos um link de acesso para o seu e-mail. Abra-o para concluir o login.'); setLoginEmail('')
   }
@@ -207,7 +227,7 @@ export default function Home() {
     setLoginError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: AUTH_REDIRECT_URL },
+      options: { redirectTo: getAuthRedirectUrl() },
     })
     if (error) setLoginError(`Não foi possível entrar com Google: ${error.message}`)
   }
@@ -224,38 +244,70 @@ export default function Home() {
   }
 
   function updateQty(id, delta) {
+    setLoginError('')
+    const selected = cart.find(item => item.id === id)
+    if (selected && delta > 0 && selected.allow_preorder === false && selected.qty + delta > Number(selected.stock_quantity || 0)) {
+      setLoginError(`Só há ${selected.stock_quantity || 0} unidade(s) de ${selected.name} disponível(is).`)
+      return
+    }
     setCart(current => current.map(item => item.id === id ? { ...item, qty: item.qty + delta } : item).filter(item => item.qty > 0))
   }
 
+  function whatsappMessage(order, items, total) {
+    const itemLines = items.map(item => `• ${item.product_name}\n  ${item.quantity} × ${formatJPY(item.unit_price)} = ${formatJPY(item.unit_price * item.quantity)}`).join('\n')
+    return [
+      'Olá! Gostaria de confirmar este pedido da MG3D:',
+      '',
+      `Pedido #${order.id}`,
+      `Cliente: ${user?.email || ''}`,
+      '',
+      itemLines,
+      '',
+      `Subtotal: ${formatJPY(total)}`,
+      'Frete: a combinar',
+      'Forma de pagamento: a combinar pelo WhatsApp',
+      '',
+      'Pode confirmar a disponibilidade, o prazo total e as formas de pagamento?',
+    ].join('\n')
+  }
+
   async function checkout() {
-    const trace = `[MG3D checkout ${new Date().toISOString()}]`
     const timeout = (promise, label, ms = 12000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} demorou mais de ${ms / 1000}s.`)), ms))])
     setLoginError('')
+
+    if (!WHATSAPP_NUMBER) {
+      setLoginError('O WhatsApp de pedidos ainda não foi configurado. Tente novamente em breve.')
+      return
+    }
+    if (!user) {
+      setCartOpen(false)
+      setLoginMessage('Entre para registrar o pedido. Depois, seu carrinho continuará disponível para envio pelo WhatsApp.')
+      setLoginOpen(true)
+      return
+    }
+
     setCheckoutState('loading')
-    console.info(trace, 'início', { cartItems: cart.length, cartTotal })
     try {
-      if (!user) { console.warn(trace, 'sem usuário autenticado'); setCartOpen(false); setLoginOpen(true); return }
-      console.info(trace, 'obtendo sessão')
       const { data: sessionData } = await timeout(supabase.auth.getSession(), 'A sessão de login', 8000)
-      const customerId = sessionData.session?.user?.id
-      if (!customerId) { console.warn(trace, 'sessão sem usuário'); setCartOpen(false); setLoginOpen(true); return }
-      console.info(trace, 'criando pedido local')
-      const { data: order, error } = await timeout(supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'awaiting_payment', payment_provider: 'stripe', payment_status: 'unpaid' }).select().single(), 'A criação do pedido')
-      if (error) throw new Error(`Não foi possível criar o pedido: ${error.message}`)
-      console.info(trace, 'pedido criado', { orderId: order.id })
-      const { error: itemsError } = await timeout(supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty }))), 'O salvamento dos itens')
-      if (itemsError) throw new Error(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`)
-      const { data: paymentSessionData } = await timeout(supabase.auth.getSession(), 'A renovação da sessão', 8000)
-      console.info(trace, 'chamando API Stripe', { orderId: order.id })
-      const response = await timeout(fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${paymentSessionData.session?.access_token || ''}` }, body: JSON.stringify({ orderId: order.id }) }), 'A API de checkout')
-      const checkout = await response.json().catch(() => ({}))
-      if (!response.ok || !checkout.url) throw new Error(checkout.error || `A API de checkout respondeu HTTP ${response.status}.`)
-      console.info(trace, 'sessão Stripe criada; redirecionando', { orderId: order.id })
-      setCart([]); setCartOpen(false); window.location.assign(checkout.url)
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Sua sessão expirou. Entre novamente para continuar.')
+
+      const response = await timeout(fetch('/api/orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: cart.map(item => ({ productId: item.id, quantity: item.qty })) }),
+      }), 'O registro do pedido')
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.order) throw new Error(result.error || 'Não foi possível registrar o pedido.')
+
+      setOrders(current => [result.order, ...current.filter(order => order.id !== result.order.id)])
+      setCart([])
+      setCartOpen(false)
+      const message = whatsappMessage(result.order, result.items, result.total)
+      window.location.assign(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`)
     } catch (error) {
-      console.error(trace, 'falha', { message: error.message })
       setCheckoutState('error')
-      setLoginError(error.message || 'Não foi possível iniciar o pagamento.')
+      setLoginError(error.message || 'Não foi possível enviar o pedido pelo WhatsApp.')
     } finally {
       setCheckoutState(current => current === 'loading' ? 'idle' : current)
     }
@@ -267,7 +319,7 @@ export default function Home() {
   }
 
   return <main>
-    <div className="announcement"><Icon name="spark" size={15} /> FRETE GRÁTIS ACIMA DE ¥5.000 <span>·</span> PRECISÃO EM CADA CAMADA</div>
+    <div className="announcement"><Icon name="spark" size={15} /> PEDIDOS PELO WHATSAPP <span>·</span> PAGAMENTO E ENTREGA COMBINADOS DIRETAMENTE</div>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="MG3D início"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a>
       <nav><a href="#colecao">Coleção</a><a href="#processo">Como fazemos</a><a href="#sobre">Sobre a MG3D</a></nav>
@@ -293,8 +345,8 @@ export default function Home() {
 
     {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button onClick={() => setCustomerPanelOpen(current => !current)}><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button>{customerPanelOpen && <div className="admin-customer-list"><strong>Clientes cadastrados</strong>{customers.length ? customers.map(customer => <div key={customer.id}><span>{customer.name || 'Cliente'}</span><small>{customer.email}</small><b>{customer.is_admin ? 'Administrador' : 'Cliente'}</b></div>) : <p>Nenhum cliente autenticado ainda.</p>}</div>}</div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · estoque: {product.stock_quantity || 0} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><AdminOrders orders={adminOrders} onStatusChange={updateOrderStatus} /><div className="admin-session"><span>{user.email}</span><button onClick={signOut}>Sair da conta</button></div></>}</section></div>}
 
-    {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Recebido' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
+    {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Aguardando confirmação no WhatsApp' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Finalizar pedido'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal estimado</span><strong>{formatJPY(cartTotal)}</strong></div><div className="whatsapp-checkout-note"><strong>Finalize pelo WhatsApp</strong><p>O pedido será registrado na sua conta. Frete, prazo final e forma de pagamento serão confirmados diretamente na conversa.</p></div><button className="button button-whatsapp full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Registrando pedido...' : 'Enviar pedido pelo WhatsApp'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
   </main>
 }

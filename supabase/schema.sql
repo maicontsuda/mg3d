@@ -27,6 +27,7 @@ create table if not exists public.customers (
   id uuid primary key references auth.users(id) on delete cascade,
   email text unique not null,
   name text,
+  phone text,
   is_admin boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -66,8 +67,9 @@ create policy users_manage_customer on public.customers for all using (auth.uid(
 drop policy if exists users_read_orders on public.orders;
 create policy users_read_orders on public.orders for select using (auth.uid() = customer_id or (auth.jwt()->>'email') = 'maicntsuda@gmail.com');
 
+-- Pedidos são criados somente pela API server-side, que valida preços e estoque
+-- usando a service role. Clientes autenticados podem consultar apenas os próprios pedidos.
 drop policy if exists users_create_orders on public.orders;
-create policy users_create_orders on public.orders for insert with check (auth.uid() = customer_id);
 
 drop policy if exists users_read_order_items on public.order_items;
 create policy users_read_order_items on public.order_items for select using (exists (select 1 from public.orders o where o.id = order_id and (o.customer_id = auth.uid() or (auth.jwt()->>'email') = 'maicntsuda@gmail.com')));
@@ -76,5 +78,8 @@ create index if not exists products_active_idx on public.products(active);
 create index if not exists orders_customer_idx on public.orders(customer_id);
 
 
+-- A API de pedidos insere os itens após consultar os dados canônicos do catálogo.
 drop policy if exists users_create_order_items on public.order_items;
-create policy users_create_order_items on public.order_items for insert with check (exists (select 1 from public.orders o where o.id = order_id and o.customer_id = auth.uid()));
+
+-- Compatibilidade para bancos criados antes da inclusão do telefone.
+alter table public.customers add column if not exists phone text;
