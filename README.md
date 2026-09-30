@@ -10,15 +10,21 @@ A página inicial apresenta a coleção, busca por produto, filtros por categori
 
 ```bash
 npm install
+cp .env.example .env.local   # preencha as chaves
 npm run dev
 ```
 
 Para validar uma versão de produção:
 
 ```bash
+npm run lint
 npm run build
 npm start
 ```
+
+> Uma revisão técnica completa do projeto — com os problemas encontrados, o que já
+> foi corrigido e a lista priorizada do que fazer em seguida — está em
+> [`ANALISE.md`](./ANALISE.md).
 
 ## Stack
 
@@ -27,13 +33,31 @@ npm start
 - CSS responsivo com identidade visual própria
 - Catálogo demonstrativo com produtos e imagens de referência
 
-O catálogo está estruturado no arquivo `app/page.js`, facilitando a substituição dos produtos demonstrativos pelos itens reais da MG3D e a integração posterior com estoque, pagamentos e logística.
+### Estrutura
+
+```
+app/
+  page.js               vitrine, carrinho, login e painel admin (client component)
+  produtos/[slug]/      página de produto (SSR + ISR, dados do Supabase)
+  components/           Icon, ProductForm, AdminOrders
+  lib/
+    config.js           fonte única de configuração (admin, URLs, chaves públicas)
+    supabase.js         cliente do navegador
+    supabase-server.js  clientes de servidor + autenticação das rotas de API
+    products.js         leitura pública do catálogo com fallback estático
+    product-utils.js    conversão entre o formato do banco e o da interface
+  api/                  cloudinary/sign, newsletter, orders/status, stripe/*
+supabase/schema.sql     tabelas, RLS, funções e índices (idempotente)
+```
+
+O catálogo real vem do Supabase; `app/catalog.js` permanece apenas como fallback
+demonstrativo caso o banco esteja indisponível.
 
 ## Cloudinary
 
 As imagens do catálogo e da página inicial agora são entregues pela CDN do Cloudinary, na pasta `mg3d/products`, com transformações `f_auto`, `q_auto` e largura responsiva. O projeto também inclui `app/api/cloudinary/sign/route.js`, uma rota server-side para assinar uploads de imagens, vídeos e arquivos sem expor o API secret no navegador.
 
-Para ativar o upload no Vercel, configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` e `MG3D_ADMIN_UPLOAD_KEY`. A última variável deve ser um segredo novo, criado especificamente para a área administrativa. Nunca coloque o API secret em `NEXT_PUBLIC_*` nem no repositório. A rota aceita apenas pastas iniciadas por `mg3d/` e exige o header `x-mg3d-admin-key`.
+Para ativar o upload no Vercel, configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET`. Nunca coloque o API secret em `NEXT_PUBLIC_*` nem no repositório. A rota aceita apenas pastas iniciadas por `mg3d/` e autoriza o upload pela **sessão Supabase do administrador**; `MG3D_ADMIN_UPLOAD_KEY` (header `x-mg3d-admin-key`) continua existindo apenas como fallback.
 
 A conta Cloudinary foi validada e recebeu a pasta `mg3d`, com seis imagens migradas para `mg3d/products`. O `ProductForm` do painel administrativo agora envia imagens, vídeos e arquivos (`PDF`, `STL` e `ZIP`) diretamente ao Cloudinary, preenche a URL segura retornada e salva essa URL na coluna `products.image`. Vídeos e arquivos usam a mesma assinatura, mudando automaticamente o `resource_type` no upload.
 
@@ -63,6 +87,26 @@ O painel administrativo agora tem o botão `Imprimir nota` em cada pedido. Ele g
 
 ## Pagamentos Stripe
 
+O pedido é criado **no servidor**: o navegador envia apenas `productId` e `quantity`,
+e `app/api/stripe/checkout/route.js` recalcula preço, estoque e total a partir do
+banco antes de abrir a Checkout Session. Preço enviado pelo cliente é ignorado.
+
 O checkout usa uma Checkout Session do Stripe em JPY e redireciona o cliente para a página hospedada do Stripe. Com os métodos ativados no Dashboard, o Stripe pode oferecer PayPay, Konbini, cartões e carteiras elegíveis dinamicamente. O pedido começa como `awaiting_payment`/`unpaid`; somente o webhook `checkout.session.completed` ou `checkout.session.async_payment_succeeded` muda o pedido para `pending`/`paid` e baixa o estoque. Sessões expiradas ou pagamentos assíncronos falhos são marcados como cancelados/failed.
 
 Configure as variáveis do `.env.example` no Vercel. A `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e `SUPABASE_SERVICE_ROLE_KEY` são privadas. O endpoint do webhook é `https://mg3d.vercel.app/api/stripe/webhook` e deve receber pelo menos `checkout.session.completed`; pagamentos reais exigem trocar as chaves `sk_test`/`pk_test` pelas chaves live depois que a conta Stripe estiver ativada.
+
+## Administrador
+
+O e-mail com acesso ao painel é definido em **um único lugar de cada lado**:
+
+- aplicação: `NEXT_PUBLIC_ADMIN_EMAIL` (lido por `app/lib/config.js`);
+- banco: a função `public.is_mg3d_admin()` em `supabase/schema.sql`.
+
+Os dois precisam ter exatamente o mesmo valor — antes havia duas grafias diferentes
+e o painel abria sem conseguir gravar nada.
+
+## Banco de dados
+
+Aplique `supabase/schema.sql` no projeto Supabase (o arquivo é idempotente). Ele cria
+tabelas, colunas de pagamento, a baixa de estoque atômica `decrement_product_stock`,
+triggers de `updated_at`, índices e as policies de RLS.

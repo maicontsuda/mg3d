@@ -1,39 +1,79 @@
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
-import { MG3D_SUPABASE_URL } from '../../../lib/supabase-config'
+import { createServiceClient } from '../../../lib/supabase-server'
+
+export const dynamic = 'force-dynamic'
+
+const PAID_EVENTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded'])
+const FAILED_EVENTS = new Set(['checkout.session.expired', 'checkout.session.async_payment_failed'])
+
+async function decrementStock(db, orderId) {
+  const { data: items } = await db.from('order_items').select('product_id,quantity').eq('order_id', orderId)
+  for (const item of items || []) {
+    if (!item.product_id) continue
+    // Atualização atômica no banco: evita a corrida do padrão ler-e-depois-gravar.
+    const { error } = await db.rpc('decrement_product_stock', {
+      p_product_id: item.product_id,
+      p_quantity: item.quantity,
+    })
+    if (error) {
+      console.error('[MG3D webhook] falha ao baixar estoque via RPC', { orderId, item, error: error.message })
+    }
+  }
+}
 
 export async function POST(request) {
   const secret = process.env.STRIPE_SECRET_KEY
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
-  if (!secret || !webhookSecret || !process.env.SUPABASE_SERVICE_ROLE_KEY) return new Response('Stripe webhook não configurado.', { status: 503 })
+  const db = createServiceClient()
+  if (!secret || !webhookSecret || !db) {
+    return new Response('Stripe webhook não configurado.', { status: 503 })
+  }
+
   const signature = request.headers.get('stripe-signature')
   const payload = await request.text()
   const stripe = new Stripe(secret)
+
   let event
-  try { event = stripe.webhooks.constructEvent(payload, signature, webhookSecret) } catch (error) { return new Response(`Webhook inválido: ${error.message}`, { status: 400 }) }
-  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-    const session = event.data.object
-    const orderId = Number(session.metadata?.order_id)
-    if (Number.isInteger(orderId)) {
-      const supabase = createClient(MG3D_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-      const { data: order } = await supabase.from('orders').select('id,payment_status').eq('id', orderId).single()
-      if (order && order.payment_status !== 'paid') {
-        await supabase.from('orders').update({ status: 'pending', payment_status: 'paid', payment_intent_id: session.payment_intent || null, updated_at: new Date().toISOString() }).eq('id', orderId)
-        const { data: items } = await supabase.from('order_items').select('product_id,quantity').eq('order_id', orderId)
-        for (const item of items || []) {
-          if (!item.product_id) continue
-          const { data: product } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single()
-          if (product) await supabase.from('products').update({ stock_quantity: Math.max(0, Number(product.stock_quantity || 0) - item.quantity), updated_at: new Date().toISOString() }).eq('id', item.product_id)
-        }
-      }
-    }
+  try {
+    event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
+  } catch (error) {
+    return new Response(`Webhook inválido: ${error.message}`, { status: 400 })
   }
-  if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
-    const orderId = Number(event.data.object.metadata?.order_id)
-    if (Number.isInteger(orderId)) {
-      const supabase = createClient(MG3D_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-      await supabase.from('orders').update({ status: 'cancelled', payment_status: 'failed', updated_at: new Date().toISOString() }).eq('id', orderId).eq('payment_status', 'unpaid')
+
+  const orderId = Number(event.data?.object?.metadata?.order_id)
+  if (!Number.isInteger(orderId)) return Response.json({ received: true, ignored: 'sem order_id' })
+
+  try {
+    if (PAID_EVENTS.has(event.type)) {
+      // O filtro por payment_status garante idempotência: se o Stripe reenviar o
+      // mesmo evento, nenhuma linha é atualizada e o estoque não baixa duas vezes.
+      const { data: updated } = await db
+        .from('orders')
+        .update({
+          status: 'pending',
+          payment_status: 'paid',
+          payment_intent_id: event.data.object.payment_intent || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId)
+        .neq('payment_status', 'paid')
+        .select('id')
+
+      if (updated?.length) await decrementStock(db, orderId)
     }
+
+    if (FAILED_EVENTS.has(event.type)) {
+      await db
+        .from('orders')
+        .update({ status: 'cancelled', payment_status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('payment_status', 'unpaid')
+    }
+  } catch (error) {
+    console.error('[MG3D webhook] erro ao processar evento', { type: event.type, orderId, message: error.message })
+    // 500 faz o Stripe reenviar o evento mais tarde.
+    return new Response('Erro ao processar o evento.', { status: 500 })
   }
+
   return Response.json({ received: true })
 }

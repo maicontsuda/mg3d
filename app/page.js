@@ -1,87 +1,30 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { products, categories, formatJPY } from './catalog'
 import { supabase } from './lib/supabase'
+import { isAdminEmail } from './lib/config'
+import { fromDbProduct, toDbProduct } from './lib/product-utils'
+import Icon from './components/Icon'
+import ProductForm from './components/ProductForm'
+import AdminOrders from './components/AdminOrders'
 
-const ADMIN_EMAIL = 'maicontsuda@gmail.com'
-const AUTH_REDIRECT_URL = 'https://mg3d.vercel.app'
-const emptyProduct = { name: '', category: 'Casa', price: 0, stock_quantity: 0, allow_preorder: true, photo_visible: true, admin_file_url: '', color: '', material: 'PLA', dimensions: '', production: '3 a 5 dias úteis', colors: '', image: '', desc: '', details: '', badge: '', active: true }
-const slugify = value => value.toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+const CART_STORAGE_KEY = 'mg3d-cart-v1'
 
-function ProductForm({ product, onSave, onCancel }) {
-  const [form, setForm] = useState(product || emptyProduct)
-  const [adminKey, setAdminKey] = useState('')
-  const [uploading, setUploading] = useState(false)
-  const [uploadMessage, setUploadMessage] = useState('')
-  const [uploadError, setUploadError] = useState('')
-  const update = (key, value) => setForm(current => ({ ...current, [key]: value }))
-
-  async function uploadMedia(event) {
-    const file = event.target.files?.[0]
-    const targetField = event.currentTarget.dataset.target || 'image'
-    if (!file) return
-    if (!adminKey.trim()) { setUploadError('Informe a chave de upload configurada no Vercel.'); event.target.value = ''; return }
-    const resourceType = file.type.startsWith('video/') ? 'video' : (file.type.startsWith('image/') ? 'image' : 'raw')
-    setUploading(true); setUploadError(''); setUploadMessage('Preparando upload...')
-    try {
-      const signedResponse = await fetch('/api/cloudinary/sign', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-mg3d-admin-key': adminKey.trim() }, body: JSON.stringify({ folder: 'mg3d/products' }) })
-      const signed = await signedResponse.json()
-      if (!signedResponse.ok) throw new Error(signed.error || 'Não foi possível assinar o upload.')
-      const payload = new FormData()
-      payload.append('file', file); payload.append('api_key', signed.apiKey); payload.append('timestamp', signed.timestamp); payload.append('signature', signed.signature); payload.append('folder', signed.folder)
-      const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${signed.cloudName}/${resourceType}/upload`, { method: 'POST', body: payload })
-      const uploaded = await uploadResponse.json()
-      if (!uploadResponse.ok) throw new Error(uploaded.error?.message || 'O Cloudinary recusou o arquivo.')
-      update(targetField, uploaded.secure_url); setUploadMessage(`${file.name} enviado com sucesso.`); sessionStorage.setItem('mg3d-upload-key', adminKey.trim())
-    } catch (error) { setUploadError(error.message || 'Falha ao enviar o arquivo.'); setUploadMessage('') } finally { setUploading(false); event.target.value = '' }
-  }
-
-  function submit(event) {
-    event.preventDefault()
-    if (!form.name.trim() || !form.price || (form.photo_visible !== false && !form.image.trim())) return
-    onSave({ ...form, id: form.id || Date.now(), slug: form.slug || slugify(form.name), price: Number(form.price), active: form.active !== false })
-  }
-
-  return <form className="admin-product-form" onSubmit={submit}><div className="admin-form-head"><div><p className="eyebrow"><span></span> Catálogo</p><h3>{product ? 'Editar produto' : 'Novo produto'}</h3></div><button type="button" className="modal-close" onClick={onCancel} aria-label="Fechar formulário"><Icon name="x" /></button></div><div className="admin-form-grid"><label>Nome<input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="Ex.: Vaso Orbit" /></label><label>Preço em ienes<input required min="1" type="number" value={form.price || ''} onChange={e => update('price', e.target.value)} placeholder="1490" /></label><label>Quantidade em estoque<input min="0" type="number" value={form.stock_quantity ?? 0} onChange={e => update('stock_quantity', e.target.value)} placeholder="0" /></label><label className="admin-check"><input type="checkbox" checked={form.allow_preorder !== false} onChange={e => update('allow_preorder', e.target.checked)} /> Aceitar encomendas quando o estoque acabar</label><label>Categoria<select value={form.category} onChange={e => update('category', e.target.value)}><option>Casa</option><option>Luz</option><option>Organização</option></select></label><label>Material<select value={form.material} onChange={e => update('material', e.target.value)}><option>PLA</option><option>PETG</option><option>TPU</option></select></label><label>Cor principal<input value={form.color} onChange={e => update('color', e.target.value)} placeholder="Azul" /></label><label>Cores disponíveis<input value={form.colors} onChange={e => update('colors', e.target.value)} placeholder="Azul, branco e preto" /></label><label>Dimensões<input value={form.dimensions} onChange={e => update('dimensions', e.target.value)} placeholder="20 × 15 × 10 cm" /></label><label>Prazo de produção<input value={form.production} onChange={e => update('production', e.target.value)} placeholder="3 a 5 dias úteis" /></label><label className="admin-form-wide">Chave de upload<input type="password" value={adminKey} onChange={e => setAdminKey(e.target.value)} placeholder="MG3D_ADMIN_UPLOAD_KEY" autoComplete="off" /><small>Usada somente para autorizar este upload; nunca é enviada ao banco.</small></label><label className="admin-form-wide admin-check"><input type="checkbox" checked={form.photo_visible !== false} onChange={e => update('photo_visible', e.target.checked)} /> Exibir foto para clientes</label><label className="admin-form-wide">Mídia do produto<input type="file" data-target="image" accept="image/*,video/*" onChange={uploadMedia} disabled={uploading} />{uploading && <small>Enviando para o Cloudinary...</small>}{uploadMessage && <small className="upload-success">{uploadMessage}</small>}{uploadError && <small className="form-error">{uploadError}</small>}<input required value={form.image} onChange={e => update('image', e.target.value)} placeholder="URL Cloudinary ou arquivo enviado" /></label><label className="admin-form-wide">Upload do arquivo técnico (somente admin)<input type="file" data-target="admin_file_url" accept=".pdf,.stl,.zip,.step,.3mf" onChange={uploadMedia} disabled={uploading} /><input value={form.admin_file_url || ''} onChange={e => update('admin_file_url', e.target.value)} placeholder="Link interno ou URL do arquivo técnico" /><small>O cliente nunca verá este arquivo.</small></label><label className="admin-form-wide">Resumo curto<input value={form.desc} onChange={e => update('desc', e.target.value)} placeholder="Uma descrição para a coleção" /></label><label className="admin-form-wide">Descrição completa<textarea rows="3" value={form.details} onChange={e => update('details', e.target.value)} placeholder="Conte a história e os detalhes do produto" /></label></div><div className="admin-form-actions"><button type="button" className="detail-contact" onClick={onCancel}>Cancelar</button><button className="button button-dark" type="submit" disabled={uploading}>Salvar produto <Icon name="check" size={17} /></button></div></form>
+const ORDER_STATUS_LABELS = {
+  awaiting_payment: 'Aguardando pagamento',
+  pending: 'Recebido',
+  processing: 'Em produção',
+  shipped: 'Enviado',
+  delivered: 'Entregue',
+  cancelled: 'Cancelado',
 }
 
-function AdminOrders({ orders, onStatusChange }) {
-  const labels = { pending: 'Recebido', processing: 'Em produção', shipped: 'Enviado', delivered: 'Entregue', cancelled: 'Cancelado' }
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [customerSearch, setCustomerSearch] = useState('')
-  const visibleOrders = orders.filter(order => {
-    const customer = `${order.customers?.name || ''} ${order.customers?.email || ''}`.toLowerCase()
-    return (statusFilter === 'all' || order.status === statusFilter) && customer.includes(customerSearch.toLowerCase().trim())
-  })
-
-  function printOrder(order) {
-    const customer = order.customers?.name || 'Cliente MG3D'
-    const email = order.customers?.email || ''
-    const items = order.order_items?.map(item => `<tr><td>${escapePrint(item.product_name)}</td><td>${item.quantity}</td><td>${formatJPY(item.unit_price)}</td><td>${formatJPY(item.unit_price * item.quantity)}</td></tr>`).join('') || ''
-    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>MG3D — Pedido #${order.id}</title><style>body{font-family:Arial,sans-serif;color:#111;max-width:820px;margin:40px auto;padding:0 24px}header{display:flex;justify-content:space-between;border-bottom:3px solid #087cff;padding-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin-top:34px}p{line-height:1.5;color:#444}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:25px 0}.meta strong{display:block;color:#111}.meta span{color:#555}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{text-align:left;border-bottom:1px solid #ddd;padding:12px 8px}th{background:#f2f5f8;font-size:12px;text-transform:uppercase}td:nth-child(n+2),th:nth-child(n+2){text-align:right}.total{text-align:right;font-size:20px;font-weight:bold;margin-top:20px}.notice{margin-top:45px;padding:14px;background:#f2f5f8;font-size:12px;color:#555}@media print{body{margin:0}.no-print{display:none}}</style></head><body><header><div><h1>MG3D</h1><p>Print Lab · Documento de pedido</p></div><div><strong>Pedido #${order.id}</strong><p>${new Date(order.created_at).toLocaleDateString('ja-JP')}</p></div></header><section class="meta"><div><strong>Cliente</strong><span>${escapePrint(customer)}</span></div><div><strong>E-mail</strong><span>${escapePrint(email)}</span></div><div><strong>Status</strong><span>${labels[order.status] || escapePrint(order.status)}</span></div><div><strong>Atualizado em</strong><span>${new Date(order.updated_at || order.created_at).toLocaleDateString('ja-JP')}</span></div></section><h2>Itens do pedido</h2><table><thead><tr><th>Produto</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${items}</tbody></table><div class="total">Total: ${formatJPY(order.total)}</div><div class="notice">Documento gerado pelo painel MG3D para conferência e impressão. Para emissão de nota fiscal oficial, preencha os dados fiscais da empresa e valide os requisitos aplicáveis no Japão.</div><p class="no-print">Use a caixa de diálogo do navegador para imprimir ou salvar como PDF.</p></body></html>`
-    const popup = window.open('', '_blank', 'noopener,noreferrer,width=900,height=800')
-    if (!popup) { setLoginError('Permita pop-ups no navegador para imprimir o pedido.'); return }
-    popup.document.write(html); popup.document.close(); popup.focus(); popup.onafterprint = () => popup.close(); setTimeout(() => popup.print(), 250)
-  }
-
-  function escapePrint(value) { return String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character])) }
-  return <div className="admin-orders"><div className="admin-list-head"><strong>Pedidos em tempo real</strong><span>{visibleOrders.length} de {orders.length}</span></div><div className="order-filters"><input aria-label="Buscar por nome ou e-mail do cliente" value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder="Buscar cliente..." /><select aria-label="Filtrar por status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos os status</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>{visibleOrders.length ? visibleOrders.map(order => <div className="admin-order-row" key={order.id}><div><strong>#{order.id} · {order.customers?.name || order.customers?.email || 'Cliente'}</strong><small>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</small><small>{new Date(order.created_at).toLocaleString('ja-JP')} · {formatJPY(order.total)}</small></div><div className="admin-order-actions"><select value={order.status} onChange={event => onStatusChange(order.id, event.target.value)} aria-label={`Status do pedido ${order.id}`}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="print-order" onClick={() => printOrder(order)}>Imprimir nota</button></div></div>) : <p className="admin-empty">Nenhum pedido corresponde aos filtros.</p>}</div>
-}
-
-function Icon({ name, size = 20 }) {
-  const paths = {
-    arrow: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
-    bag: <><path d="M6 8h12l1 12H5L6 8Z"/><path d="M9 8a3 3 0 0 1 6 0"/></>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    x: <><path d="m6 6 12 12M18 6 6 18"/></>,
-    check: <path d="m5 12 4 4L19 6"/>,
-    spark: <><path d="m12 3 1.4 5.6L19 10l-5.6 1.4L12 17l-1.4-5.6L5 10l5.6-1.4L12 3Z"/><path d="m19 16 .5 2.5L22 19l-2.5.5L19 22l-.5-2.5L16 19l2.5-.5L19 16Z"/></>,
-  }
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
-}
+// Antes o redirect de login era fixo em https://mg3d.vercel.app, o que quebrava
+// o login em ambiente local e em previews.
+const authRedirectUrl = () =>
+  typeof window === 'undefined' ? process.env.NEXT_PUBLIC_SITE_URL || 'https://mg3d.vercel.app' : window.location.origin
 
 export default function Home() {
   const [category, setCategory] = useState('Todos')
@@ -105,6 +48,47 @@ export default function Home() {
   const [editingProduct, setEditingProduct] = useState(null)
   const [productFormOpen, setProductFormOpen] = useState(false)
   const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [newsletterError, setNewsletterError] = useState('')
+  const [cartLoaded, setCartLoaded] = useState(false)
+
+  // Mensagens de sistema (erros de admin, estoque, checkout) aparecem num aviso
+  // próprio; antes iam para o estado do formulário de login e ficavam invisíveis.
+  const notify = useCallback((message, type = 'error') => {
+    setNotice(message ? { message, type } : null)
+  }, [])
+
+  // O carrinho sobrevive a um refresh ou ao retorno do Stripe.
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(CART_STORAGE_KEY) || '[]')
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage só existe após a hidratação
+      if (Array.isArray(stored) && stored.length) setCart(stored)
+    } catch {
+      window.localStorage.removeItem(CART_STORAGE_KEY)
+    }
+    setCartLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (!cartLoaded) return
+    try {
+      window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
+    } catch {
+      /* modo privado do navegador: seguimos sem persistir */
+    }
+  }, [cart, cartLoaded])
+
+  // Mantém a tabela customers em dia com o usuário logado.
+  // is_admin NÃO é enviado pelo navegador: quem decide isso é a RLS/servidor.
+  const syncCustomer = useCallback(async current => {
+    await supabase.from('customers').upsert({
+      id: current.id,
+      email: current.email,
+      name: current.user_metadata?.full_name || current.email?.split('@')[0],
+      phone: current.user_metadata?.phone || current.phone || null,
+    })
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -112,11 +96,11 @@ export default function Home() {
       const { data: sessionData } = await supabase.auth.getSession()
       const current = sessionData.session?.user
       if (mounted && current) {
-        setUser({ id: current.id, email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL })
+        setUser({ id: current.id, email: current.email, isAdmin: isAdminEmail(current.email) })
         await syncCustomer(current)
         const { data: orderData } = await supabase.from('orders').select('*, order_items(*)').eq('customer_id', current.id).order('created_at', { ascending: false })
         if (mounted && orderData) setOrders(orderData)
-        if (current.email?.toLowerCase() === ADMIN_EMAIL) {
+        if (isAdminEmail(current.email)) {
           const { data: customerData } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
           if (mounted && customerData) setCustomers(customerData)
           const { data: orderData } = await supabase.from('orders').select('*, order_items(*), customers(name,email)').order('created_at', { ascending: false })
@@ -134,34 +118,28 @@ export default function Home() {
     const orderChannel = supabase.channel('mg3d-orders-live').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshLiveOrders).on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshLiveOrders).subscribe()
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const current = session?.user
-      setUser(current ? { id: current.id, email: current.email, isAdmin: current.email?.toLowerCase() === ADMIN_EMAIL } : null)
+      setUser(current ? { id: current.id, email: current.email, isAdmin: isAdminEmail(current.email) } : null)
       if (current) {
         await syncCustomer(current)
         const { data } = await supabase.from('orders').select('*, order_items(*)').eq('customer_id', current.id).order('created_at', { ascending: false })
         if (data) setOrders(data)
-        if (current.email?.toLowerCase() === ADMIN_EMAIL) {
+        if (isAdminEmail(current.email)) {
           const { data: customerData } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
           if (customerData) setCustomers(customerData)
         }
       }
     })
     return () => { mounted = false; listener.subscription.unsubscribe(); supabase.removeChannel(orderChannel) }
-  }, [])
+  }, [syncCustomer])
 
-  async function syncCustomer(current) {
-    await supabase.from('customers').upsert({ id: current.id, email: current.email, name: current.user_metadata?.full_name || current.email?.split('@')[0], phone: current.user_metadata?.phone || current.phone || null, is_admin: current.email?.toLowerCase() === ADMIN_EMAIL })
-  }
-
-  function fromDbProduct(item) { return { ...item, desc: item.description || '', stock_quantity: Number(item.stock_quantity || 0), allow_preorder: item.allow_preorder !== false, photo_visible: item.photo_visible !== false, admin_file_url: item.admin_file_url || '', active: item.active !== false } }
-  function toDbProduct(product) { return { id: product.id, slug: product.slug || slugify(product.name), name: product.name, category: product.category, price: Number(product.price), stock_quantity: Math.max(0, Number(product.stock_quantity || 0)), allow_preorder: product.allow_preorder !== false, photo_visible: product.photo_visible !== false, admin_file_url: product.admin_file_url || null, color: product.color || '', badge: product.badge || '', image: product.image || '', description: product.desc || '', details: product.details || '', material: product.material || 'PLA', dimensions: product.dimensions || '', production: product.production || '', colors: product.colors || '', active: product.active !== false } }
 
   async function saveProduct(product) {
     const payload = toDbProduct(product)
     const { data, error } = await supabase.from('products').upsert(payload).select().single()
-    if (error) { setLoginError(`Não foi possível salvar: ${error.message}`); return }
+    if (error) { notify(`Não foi possível salvar: ${error.message}`); return }
     const saved = fromDbProduct(data)
     setAdminProducts(current => current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
-    setProductFormOpen(false); setEditingProduct(null); setLoginError('')
+    setProductFormOpen(false); setEditingProduct(null); notify('Produto salvo com sucesso.', 'info')
   }
 
   async function updateOrderStatus(id, status) {
@@ -169,16 +147,16 @@ export default function Home() {
     const token = sessionData.session?.access_token
     const response = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` }, body: JSON.stringify({ id, status }) })
     const result = await response.json().catch(() => ({}))
-    if (!response.ok) { setLoginError(`Não foi possível atualizar o pedido: ${result.error || 'erro desconhecido'}`); return }
+    if (!response.ok) { notify(`Não foi possível atualizar o pedido: ${result.error || 'erro desconhecido'}`); return }
     setAdminOrders(current => current.map(order => order.id === id ? { ...order, ...result.order } : order))
     const failed = result.notifications?.filter(item => !item.sent) || []
-    if (failed.length === 2) setLoginError('Pedido atualizado. Configure RESEND ou Twilio no Vercel para enviar notificações.')
+    if (failed.length === 2) notify('Pedido atualizado. Configure Resend ou Twilio no Vercel para enviar notificações.', 'info')
   }
 
   async function removeProduct(id) {
     if (!window.confirm('Remover este produto do catálogo?')) return
     const { error } = await supabase.from('products').delete().eq('id', id)
-    if (error) { setLoginError(`Não foi possível excluir: ${error.message}`); return }
+    if (error) { notify(`Não foi possível excluir: ${error.message}`); return }
     setAdminProducts(current => current.filter(item => item.id !== id))
   }
 
@@ -186,7 +164,7 @@ export default function Home() {
     const product = adminProducts.find(item => item.id === id)
     if (!product) return
     const { error } = await supabase.from('products').update({ active: product.active === false }).eq('id', id)
-    if (error) { setLoginError(`Não foi possível alterar o status: ${error.message}`); return }
+    if (error) { notify(`Não foi possível alterar o status: ${error.message}`); return }
     setAdminProducts(current => current.map(item => item.id === id ? { ...item, active: item.active === false } : item))
   }
 
@@ -198,7 +176,7 @@ export default function Home() {
     event.preventDefault()
     const email = loginEmail.trim().toLowerCase()
     if (!email || !email.includes('@')) { setLoginError('Digite um e-mail válido.'); return }
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: AUTH_REDIRECT_URL } })
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: authRedirectUrl() } })
     if (error) { setLoginError(error.message); return }
     setLoginError(''); setLoginMessage('Enviamos um link de acesso para o seu e-mail. Abra-o para concluir o login.'); setLoginEmail('')
   }
@@ -207,15 +185,15 @@ export default function Home() {
     setLoginError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: AUTH_REDIRECT_URL },
+      options: { redirectTo: authRedirectUrl() },
     })
     if (error) setLoginError(`Não foi possível entrar com Google: ${error.message}`)
   }
 
   function addToCart(product) {
     const currentQty = cart.find(item => item.id === product.id)?.qty || 0
-    if ((product.stock_quantity || 0) <= 0 && product.allow_preorder === false) { setLoginError('Este produto está esgotado e não aceita encomendas no momento.'); return }
-    if ((product.stock_quantity || 0) > 0 && currentQty >= product.stock_quantity && product.allow_preorder === false) { setLoginError('A quantidade disponível deste produto já está no seu carrinho.'); return }
+    if ((product.stock_quantity || 0) <= 0 && product.allow_preorder === false) { notify('Este produto está esgotado e não aceita encomendas no momento.'); return }
+    if ((product.stock_quantity || 0) > 0 && currentQty >= product.stock_quantity && product.allow_preorder === false) { notify('A quantidade disponível deste produto já está no seu carrinho.'); return }
     setCart(current => {
       const found = current.find(item => item.id === product.id)
       return found ? current.map(item => item.id === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { ...product, qty: 1 }]
@@ -228,38 +206,71 @@ export default function Home() {
   }
 
   async function checkout() {
-    const trace = `[MG3D checkout ${new Date().toISOString()}]`
-    const timeout = (promise, label, ms = 12000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} demorou mais de ${ms / 1000}s.`)), ms))])
-    setLoginError('')
     setCheckoutState('loading')
-    console.info(trace, 'início', { cartItems: cart.length, cartTotal })
+    notify(null)
     try {
-      if (!user) { console.warn(trace, 'sem usuário autenticado'); setCartOpen(false); setLoginOpen(true); return }
-      console.info(trace, 'obtendo sessão')
-      const { data: sessionData } = await timeout(supabase.auth.getSession(), 'A sessão de login', 8000)
-      const customerId = sessionData.session?.user?.id
-      if (!customerId) { console.warn(trace, 'sessão sem usuário'); setCartOpen(false); setLoginOpen(true); return }
-      console.info(trace, 'criando pedido local')
-      const { data: order, error } = await timeout(supabase.from('orders').insert({ customer_id: customerId, total: cartTotal, status: 'awaiting_payment', payment_provider: 'stripe', payment_status: 'unpaid' }).select().single(), 'A criação do pedido')
-      if (error) throw new Error(`Não foi possível criar o pedido: ${error.message}`)
-      console.info(trace, 'pedido criado', { orderId: order.id })
-      const { error: itemsError } = await timeout(supabase.from('order_items').insert(cart.map(item => ({ order_id: order.id, product_id: typeof item.id === 'number' ? item.id : null, product_name: item.name, unit_price: item.price, quantity: item.qty }))), 'O salvamento dos itens')
-      if (itemsError) throw new Error(`Pedido criado, mas os itens não foram salvos: ${itemsError.message}`)
-      const { data: paymentSessionData } = await timeout(supabase.auth.getSession(), 'A renovação da sessão', 8000)
-      console.info(trace, 'chamando API Stripe', { orderId: order.id })
-      const response = await timeout(fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${paymentSessionData.session?.access_token || ''}` }, body: JSON.stringify({ orderId: order.id }) }), 'A API de checkout')
-      const checkout = await response.json().catch(() => ({}))
-      if (!response.ok || !checkout.url) throw new Error(checkout.error || `A API de checkout respondeu HTTP ${response.status}.`)
-      console.info(trace, 'sessão Stripe criada; redirecionando', { orderId: order.id })
-      setCart([]); setCartOpen(false); window.location.assign(checkout.url)
+      if (!user) { setCartOpen(false); setLoginOpen(true); return }
+
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) { setCartOpen(false); setLoginOpen(true); return }
+
+      // O navegador manda apenas produto + quantidade. Preço, total e estoque
+      // são recalculados no servidor a partir do banco (app/api/stripe/checkout).
+      const response = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: cart.map(item => ({ productId: item.id, quantity: item.qty })) }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.url) {
+        throw new Error(result.error || `A API de checkout respondeu HTTP ${response.status}.`)
+      }
+
+      setCartOpen(false)
+      window.location.assign(result.url)
     } catch (error) {
-      console.error(trace, 'falha', { message: error.message })
       setCheckoutState('error')
-      setLoginError(error.message || 'Não foi possível iniciar o pagamento.')
+      notify(error.message || 'Não foi possível iniciar o pagamento.')
     } finally {
-      setCheckoutState(current => current === 'loading' ? 'idle' : current)
+      setCheckoutState(current => (current === 'loading' ? 'idle' : current))
     }
   }
+
+  async function subscribeNewsletter(event) {
+    event.preventDefault()
+    const email = newsletter.trim()
+    if (!email) return
+    setNewsletterError('')
+    try {
+      const response = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a inscrição.')
+      setSubscribed(true)
+      setNewsletter('')
+    } catch (error) {
+      setNewsletterError(error.message)
+    }
+  }
+
+  // Ao voltar do Stripe com pagamento concluído, esvazia o carrinho e avisa.
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get('payment')
+    if (status === 'success') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reage ao retorno do Stripe (fonte externa)
+      setCart([])
+      notify('Pagamento confirmado! Você recebe a atualização do pedido por e-mail.', 'info')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    if (status === 'cancelled') {
+      notify('Pagamento cancelado. Seu carrinho continua salvo.', 'info')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [notify])
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -267,6 +278,7 @@ export default function Home() {
   }
 
   return <main>
+    {notice && <div className={`app-notice ${notice.type}`} role="status"><span>{notice.message}</span><button onClick={() => notify(null)} aria-label="Fechar aviso"><Icon name="x" size={16} /></button></div>}
     <div className="announcement"><Icon name="spark" size={15} /> FRETE GRÁTIS ACIMA DE ¥5.000 <span>·</span> PRECISÃO EM CADA CAMADA</div>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="MG3D início"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a>
@@ -285,7 +297,7 @@ export default function Home() {
 
     <section className="manifesto section" id="processo"><div className="manifesto-image"><div className="process-visual-art"><img className="process-logo" src="/logo-mg.webp" alt="Logo MG 3D Print" /></div><span className="process-caption">DO ARQUIVO<br /><i>AO OBJETO.</i></span></div><div className="manifesto-copy"><p className="eyebrow"><span></span> Nosso jeito de fazer</p><h2>Design consciente,<br /><i>sem linha de montagem.</i></h2><p>A gente acredita que uma boa peça nasce de uma boa pergunta: ela precisa existir? Cada produto MG3D é desenhado, impresso e finalizado por aqui, um de cada vez.</p><div className="values"><div><b>01</b><span><strong>Sob demanda</strong>produzimos o que você mais precisa.</span></div><div><b>02</b><span><strong>Material</strong>PLA, PETG e TPU — o material certo para cada produto.</span></div><div><b>03</b><span><strong>Feito por pessoas</strong>Do primeiro rascunho ao seu pacote.</span></div></div><a className="text-link" href="#sobre">Conheça nossa história <Icon name="arrow" size={16} /></a></div></section>
 
-    <section className="newsletter section" id="sobre"><div><p className="eyebrow"><span></span> Entre para o clube</p><h2>Novidades que<br /><i>valem espaço.</i></h2></div><div><p>Receba lançamentos, bastidores e uma dose de inspiração — sem spam, prometemos.</p>{subscribed ? <div className="success"><Icon name="check" size={18} /> Você está na lista. Até breve!</div> : <form onSubmit={e => { e.preventDefault(); if (newsletter) setSubscribed(true) }}><input type="email" required placeholder="seu melhor e-mail" value={newsletter} onChange={e => setNewsletter(e.target.value)} /><button aria-label="Cadastrar e-mail"><Icon name="arrow" size={18} /></button></form>}<small>Ao assinar, você concorda com nossa política de privacidade.</small></div></section>
+    <section className="newsletter section" id="sobre"><div><p className="eyebrow"><span></span> Entre para o clube</p><h2>Novidades que<br /><i>valem espaço.</i></h2></div><div><p>Receba lançamentos, bastidores e uma dose de inspiração — sem spam, prometemos.</p>{subscribed ? <div className="success"><Icon name="check" size={18} /> Você está na lista. Até breve!</div> : <><form onSubmit={subscribeNewsletter}><input type="email" required placeholder="seu melhor e-mail" value={newsletter} onChange={e => setNewsletter(e.target.value)} /><button aria-label="Cadastrar e-mail"><Icon name="arrow" size={18} /></button></form>{newsletterError && <small className="form-error" role="alert">{newsletterError}</small>}</>}<small>Ao assinar, você concorda com nossa política de privacidade.</small></div></section>
 
     <footer><div className="footer-brand"><a className="brand" href="#top"><img className="brand-logo" src="/logo-mg.webp" alt="MG 3D Print" /><span><em>M</em><strong>G</strong><i>3D</i><small>PRINT LAB</small></span></a><p>Objetos que ganham forma.<br />E um lugar na sua casa.</p></div><div className="footer-links"><div><b>Explorar</b><a href="#colecao">Coleção</a><a href="#processo">Nosso processo</a><a href="#sobre">Sobre nós</a></div><div><b>Ajuda</b><a href="#top">Envios e trocas</a><a href="#top">Cuidados com as peças</a><a href="#top">Fale com a gente</a></div></div><div className="footer-bottom"><span>© 2026 MG3D. Feito com intenção.</span><span>Instagram &nbsp;·&nbsp; Pinterest</span></div></footer>
 
@@ -293,8 +305,8 @@ export default function Home() {
 
     {adminOpen && user?.isAdmin && <div className="overlay" onClick={() => setAdminOpen(false)}><section className="admin-modal" onClick={e => e.stopPropagation()}>{productFormOpen ? <ProductForm product={editingProduct} onSave={saveProduct} onCancel={() => { setProductFormOpen(false); setEditingProduct(null) }} /> : <><div className="drawer-head"><div><p className="eyebrow"><span></span> Acesso administrador</p><h2>Painel <i>MG3D</i></h2></div><button onClick={() => setAdminOpen(false)} aria-label="Fechar painel"><Icon name="x" /></button></div><div className="admin-welcome"><span className="admin-dot"></span><div><strong>Olá, Maicon</strong><p>Você está conectado como administrador.</p></div></div><div className="admin-grid"><button onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}><span>＋</span><strong>Adicionar produto</strong><small>Criar uma nova página de produto</small><Icon name="arrow" size={16} /></button><button onClick={() => document.getElementById('admin-product-list')?.scrollIntoView({ behavior: 'smooth' })}><span>⌘</span><strong>Gerenciar produtos</strong><small>{adminProducts.length} produtos no catálogo</small><Icon name="arrow" size={16} /></button><button onClick={() => setCustomerPanelOpen(current => !current)}><span>◎</span><strong>Gerenciar clientes</strong><small>{customers.length} cliente{customers.length === 1 ? '' : 's'} cadastrado{customers.length === 1 ? '' : 's'}</small><Icon name="arrow" size={16} /></button>{customerPanelOpen && <div className="admin-customer-list"><strong>Clientes cadastrados</strong>{customers.length ? customers.map(customer => <div key={customer.id}><span>{customer.name || 'Cliente'}</span><small>{customer.email}</small><b>{customer.is_admin ? 'Administrador' : 'Cliente'}</b></div>) : <p>Nenhum cliente autenticado ainda.</p>}</div>}</div><div className="admin-product-list" id="admin-product-list"><div className="admin-list-head"><strong>Produtos cadastrados</strong><button className="detail-contact" onClick={() => { setEditingProduct(null); setProductFormOpen(true) }}>+ Novo produto</button></div>{adminProducts.map(product => <div className={`admin-product-row ${product.active === false ? 'inactive' : ''}`} key={product.id}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{formatJPY(product.price)} · {product.material} · estoque: {product.stock_quantity || 0} · {product.active === false ? 'Desativado' : 'Ativo'}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active === false ? 'Ativar' : 'Desativar'}</button><button onClick={() => { setEditingProduct(product); setProductFormOpen(true) }}>Editar</button><button className="danger" onClick={() => removeProduct(product.id)}>Excluir</button></div>)}</div><AdminOrders orders={adminOrders} onStatusChange={updateOrderStatus} /><div className="admin-session"><span>{user.email}</span><button onClick={signOut}>Sair da conta</button></div></>}</section></div>}
 
-    {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Recebido' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
+    {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {ORDER_STATUS_LABELS[order.status] || order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Finalizar pedido'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Finalizar pedido'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{notice?.type === 'error' && <p className="form-error checkout-error" role="alert">{notice.message}</p>}</div></>}</aside></div>}
   </main>
 }
