@@ -13,11 +13,11 @@ export const SUPABASE_ANON_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY ||
   ''
 
-// ATENÇÃO: este e-mail precisa ser exatamente o mesmo usado nas policies de RLS
-// em supabase/schema.sql. Antes havia duas grafias diferentes no código
-// (maicntsuda@ no banco/API e maicontsuda@ na interface), o que fazia o painel
-// abrir para um usuário que o banco recusava.
-export const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'maicntsuda@gmail.com')
+// ATENÇÃO: este e-mail precisa ser exatamente o mesmo usado por
+// public.is_mg3d_admin() em supabase/schema.sql. Antes havia duas grafias
+// diferentes no código (maicntsuda@ no banco/API e maicontsuda@ na interface),
+// o que fazia o painel abrir para um usuário que o banco recusava.
+export const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'maicontsuda@gmail.com')
   .trim()
   .toLowerCase()
 

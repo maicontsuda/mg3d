@@ -97,7 +97,7 @@ returns boolean
 language sql
 stable
 as $$
-  select coalesce(lower(auth.jwt() ->> 'email') = 'maicntsuda@gmail.com', false);
+  select coalesce(lower(auth.jwt() ->> 'email') = 'maicontsuda@gmail.com', false);
 $$;
 
 -- Baixa de estoque atômica (usada pelo webhook do Stripe).

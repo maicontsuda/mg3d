@@ -50,13 +50,13 @@ retry). As policies de INSERT do cliente foram removidas do schema.
 
 ### 2.2 O administrador estava dividido entre dois e-mails
 
-- `app/page.js`: `maicontsuda@gmail.com`
-- API, RLS e contato: `maicntsuda@gmail.com`
+- `app/page.js`: `maicontsuda@gmail.com` (grafia correta)
+- API, RLS e contato: `maicntsuda@gmail.com` (grafia errada, faltando o "o")
 
 O painel abria na interface, mas **toda escrita era recusada pela RLS** — exatamente
 o tipo de bug que parece "o Supabase não funciona". Agora existe `ADMIN_EMAIL` em
 `app/lib/config.js` (env `NEXT_PUBLIC_ADMIN_EMAIL`) e a função `public.is_mg3d_admin()`
-no banco: **dois lugares, um valor**. Confirme qual grafia é a correta e ajuste os dois.
+no banco: **dois lugares, um valor**, hoje `maicontsuda@gmail.com` nos dois.
 
 ### 2.3 O schema SQL não tinha as colunas que o código usava
 
@@ -127,9 +127,10 @@ O campo saiu do payload do navegador.
 
 ### Alta prioridade
 
-1. **Confirmar o e-mail do administrador.** Defina `NEXT_PUBLIC_ADMIN_EMAIL` no Vercel
-   e o mesmo valor dentro de `public.is_mg3d_admin()` em `supabase/schema.sql`.
-   Enquanto as duas grafias não forem conciliadas, o painel não escreve no banco.
+1. **Aplicar o e-mail de admin no ambiente.** O valor correto (`maicontsuda@gmail.com`)
+   já é o padrão em `app/lib/config.js` e em `public.is_mg3d_admin()`. Para mudar no
+   futuro, altere `NEXT_PUBLIC_ADMIN_EMAIL` no Vercel **e** a função no banco juntos —
+   se um lado ficar diferente, o painel abre mas não grava nada.
 2. **Rodar o novo `supabase/schema.sql`** no projeto Supabase. Ele é idempotente, mas
    revise a remoção das policies `users_create_orders` / `users_create_order_items`:
    é ela que fecha a brecha de preço.
