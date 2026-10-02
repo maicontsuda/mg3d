@@ -6,13 +6,15 @@ export function generateStaticParams() {
   return products.map(product => ({ slug: product.slug }))
 }
 
-export function generateMetadata({ params }) {
-  const product = products.find(item => item.slug === params.slug)
+export async function generateMetadata({ params }) {
+  const { slug } = await params
+  const product = products.find(item => item.slug === slug)
   return product ? { title: `${product.name} — MG3D`, description: product.details } : {}
 }
 
-export default function ProductPage({ params }) {
-  const product = products.find(item => item.slug === params.slug)
+export default async function ProductPage({ params }) {
+  const { slug } = await params
+  const product = products.find(item => item.slug === slug)
   if (!product) notFound()
 
   return <main className="product-detail-page">
