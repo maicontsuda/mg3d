@@ -83,6 +83,11 @@ function Icon({ name, size = 20 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
 
+// WhatsApp que recebe os pedidos. Troque pela variável de ambiente na Vercel:
+// NEXT_PUBLIC_WHATSAPP_NUMBER=818036318604  (só dígitos, com DDI, sem + nem espaço)
+const WHATSAPP_NUMBER = String(process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '818036318604').replace(/\D/g, '')
+const FRETE_GRATIS = 5000
+
 export default function Home() {
   const [category, setCategory] = useState('Todos')
   const [query, setQuery] = useState('')
@@ -261,6 +266,26 @@ export default function Home() {
     }
   }
 
+  // Envia o pedido montado direto para o WhatsApp da loja — sem login e sem gateway.
+  function whatsappCheckout() {
+    const itens = cart.map(item => `• ${item.qty}× ${item.name} — ${formatJPY(item.price * item.qty)}`)
+    const falta = FRETE_GRATIS - cartTotal
+    const frete = falta > 0
+      ? `Frete: faltam ${formatJPY(falta)} para o frete grátis (acima de ${formatJPY(FRETE_GRATIS)})`
+      : `Frete: grátis (pedido acima de ${formatJPY(FRETE_GRATIS)})`
+    const texto = [
+      'Olá, MG3D! Vim pelo site e quero encomendar:',
+      '',
+      ...itens,
+      '',
+      `Subtotal: ${formatJPY(cartTotal)}`,
+      frete,
+      '',
+      'Pode me confirmar o prazo de produção e o frete para o meu CEP (〒)?',
+    ].join('\n')
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener,noreferrer')
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null); setOrders([]); setAdminOpen(false); setAccountOpen(false)
@@ -295,6 +320,6 @@ export default function Home() {
 
     {accountOpen && user && <div className="overlay" onClick={() => setAccountOpen(false)}><section className="login-modal account-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setAccountOpen(false)} aria-label="Fechar"><Icon name="x" /></button><p className="eyebrow"><span></span> Minha conta</p><h2>Seus <i>pedidos.</i></h2><p className="modal-copy">{user.email}</p>{orders.length ? <div className="order-history">{orders.map(order => <div className="order-card" key={order.id}><div><strong>Pedido #{order.id}</strong><span>{new Date(order.created_at).toLocaleDateString('ja-JP')}</span></div><p>{order.order_items?.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</p><b>{formatJPY(order.total)} · {order.status === 'pending' ? 'Recebido' : order.status}</b></div>)}</div> : <p className="empty-account">Você ainda não fez nenhum pedido.</p>}<button className="detail-contact" onClick={signOut}>Sair da conta</button></section></div>}
 
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>Frete calculado no checkout</p><button className="button button-dark full" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Finalizar pedido'} {checkoutState !== 'loading' && <Icon name="arrow" size={17} />}</button>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
+    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow"><span></span> Sua seleção</p><h2>Carrinho <small>({cartCount})</small></h2></div><button onClick={() => setCartOpen(false)} aria-label="Fechar carrinho"><Icon name="x" /></button></div>{cart.length === 0 ? <div className="empty-cart"><div className="empty-icon"><Icon name="bag" size={28} /></div><h3>Seu carrinho está leve.</h3><p>Escolha uma peça para começar a transformar seu espaço.</p><button className="button button-dark" onClick={() => setCartOpen(false)}>Ver coleção</button></div> : <><div className="cart-items">{cart.map(item => <div className="cart-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatJPY(item.price)}</p><div className="qty"><button onClick={() => updateQty(item.id, -1)}>−</button><span>{item.qty}</span><button onClick={() => updateQty(item.id, 1)}>+</button></div></div></div>)}</div><div className="cart-summary"><div><span>Subtotal</span><strong>{formatJPY(cartTotal)}</strong></div><p>{cartTotal >= FRETE_GRATIS ? 'Frete grátis neste pedido' : `Faltam ${formatJPY(FRETE_GRATIS - cartTotal)} para o frete grátis`}</p><button className="button whatsapp-button full" type="button" onClick={whatsappCheckout}>Finalizar no WhatsApp <Icon name="arrow" size={17} /></button><button className="button button-dark full secondary-checkout" type="button" onClick={checkout} disabled={checkoutState === 'loading'}>{checkoutState === 'loading' ? 'Preparando pagamento...' : 'Pagar com cartão (PayPay / Konbini)'}</button><small className="checkout-note">Pelo WhatsApp você fala direto com a gente, sem criar conta.</small>{loginError && <p className="form-error checkout-error" role="alert">{loginError}</p>}</div></>}</aside></div>}
   </main>
 }
